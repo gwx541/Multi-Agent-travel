@@ -25,7 +25,7 @@ An end-to-end travel assistant built on FastAPI and DeepSeek. A Manager LLM disp
 | Area | What it does |
 | --- | --- |
 | **Multi-agent orchestration** | A Manager LLM emits JSON `next_agent / subtask / final_answer` decisions; 5 domain agents run their own ReAct + tool-calling loops |
-| **Real MCP integrations** | Custom `MCPClient` auto-detects **SSE / Streamable HTTP** transports; integrated 5 ecosystem MCP servers (Amap, Xiaohongshu, 12306, Variflight, Ctrip) with automatic mock fallback |
+| **Real MCP integrations** | Custom `MCPClient` auto-detects **SSE / Streamable HTTP** transports; integrated 5 ecosystem MCP servers (Amap, Xiaohongshu, 12306, Variflight, AIGOHOTEL) with automatic mock fallback |
 | **Two-tier memory system** | **Short-term** (in-process session cache, 30-min TTL): stores full message history + session notes; **Long-term** (SQLite-persisted): stores cross-conversation user preferences; both layers injected into Manager and every downstream agent |
 | **DeepSeek compatibility** | Patches DeepSeek's occasional DSML-style tool calls (`_parse_dsml_calls`); manager `json_object` is double-wrap tolerant via `_extract_decision` |
 | **Streaming + cancellation** | FastAPI + `sse-starlette` pushes `manager / agent_start / agent_end / final` events; the SPA cancels mid-stream via `AbortController`, the backend's orchestrator unwinds cleanly |
@@ -46,7 +46,7 @@ flowchart TB
     API --> ORCH["🎯 Orchestrator<br/>(Manager LLM, JSON routing)"]
 
     ORCH --> A1["🗣 interaction_agent<br/>save_preference · save_session_context"]
-    ORCH --> A2["🗺 planning_agent<br/>xhs · amap · ctrip"]
+    ORCH --> A2["🗺 planning_agent<br/>xhs · amap · hotel"]
     ORCH --> A3["🚇 navigation_agent<br/>amap · xhs"]
     ORCH --> A4["🎫 search_agent<br/>variflight · 12306"]
     ORCH --> A5["✅ testing_agent"]
@@ -55,7 +55,7 @@ flowchart TB
 
     A2 --> M1[(Amap MCP)]
     A2 --> M2[(Xiaohongshu MCP)]
-    A2 --> M3[(Ctrip MCP)]
+    A2 --> M3[(AIGOHOTEL MCP)]
     A3 --> M1
     A3 --> M2
     A4 --> M4[(Variflight MCP)]
@@ -91,7 +91,7 @@ When the short-term cache is empty (after restart), the orchestrator automatical
 
 - **Backend:** Python 3.11, FastAPI, `sse-starlette`, official `mcp` SDK (SSE + Streamable HTTP), `openai` SDK (DeepSeek-compatible), Pydantic v2, async SQLAlchemy
 - **LLM:** DeepSeek-Chat (function calling — required for every agent's tool loop)
-- **MCPs:** Amap, Xiaohongshu (`xpzouying/xiaohongshu-mcp`), 12306 (`Joooook/12306-mcp`, ModelScope hosted), Variflight (ModelScope hosted), Ctrip (mock + real search-page URL)
+- **MCPs:** Amap, Xiaohongshu (`xpzouying/xiaohongshu-mcp`), 12306 (`Joooook/12306-mcp`, ModelScope hosted), Variflight (ModelScope hosted), AIGOHOTEL (`yorklu/AI_Go_Hotel_MCP`, ModelScope hosted)
 - **Storage:** SQLite (default) / PostgreSQL (production-switchable), async SQLAlchemy
 - **Frontend:** single-file SPA (HTML/CSS/JS) with a hand-rolled lightweight markdown renderer and `navigator.geolocation`
 - **Deployment:** Docker + docker-compose
@@ -214,9 +214,19 @@ docker exec -it xhs-mcp /app/login
 XHS_MCP_URL=http://localhost:18060/mcp
 ```
 
-### Ctrip
+### AIGOHOTEL (hotels)
 
-The official MCP is enterprise-only. The project ships a mock + real search-page URL; hotel names render as blue clickable links to Ctrip search results.
+ModelScope-hosted (`yorklu/AI_Go_Hotel_MCP`). Supports real hotel search:
+
+1. Apply for an API Key (with `mcp_` prefix) at <https://mcp.agentichotel.cn/apply>
+2. Log in at [ModelScope · AI_Go_Hotel_MCP](https://www.modelscope.cn/mcp/servers/yorklu/AI_Go_Hotel_MCP) to get your personal endpoint, in the form:
+   `https://mcp.api-inference.modelscope.net/<your-token>/mcp`
+
+```env
+HOTEL_MCP_URL=https://mcp.api-inference.modelscope.net/<your-token>/mcp
+```
+
+Leave blank to fall back to the built-in mock automatically.
 
 ---
 
@@ -237,7 +247,7 @@ travelagent/
 │   │   ├── amap.py
 │   │   ├── xhs.py
 │   │   ├── train12306.py
-│   │   ├── ctrip.py
+│   │   ├── hotel.py
 │   │   └── variflight.py
 │   ├── memory/
 │   │   ├── memory_store.py    # Long-term memory (async SQLAlchemy, SQLite/PG)
@@ -261,7 +271,7 @@ travelagent/
 
 > **Multi-Agent Travel Assistant** — Python · FastAPI · DeepSeek · MCP (personal project)
 > - Designed a Manager-Workers orchestration: a Manager LLM emits JSON routing decisions to 5 domain agents (clarification / planning / navigation / search / QA), each running an independent ReAct tool-calling loop, inspired by Microsoft Agent Framework's Magentic pattern.
-> - Built a unified MCP client with automatic SSE / Streamable HTTP transport selection; integrated 5 real-time data sources (Amap, Xiaohongshu, 12306, Variflight, Ctrip) with automatic mock fallback so the demo never breaks.
+> - Built a unified MCP client with automatic SSE / Streamable HTTP transport selection; integrated 5 real-time data sources (Amap, Xiaohongshu, 12306, Variflight, AIGOHOTEL) with automatic mock fallback so the demo never breaks.
 > - Designed a two-tier memory architecture — short-term (in-process session cache with 30-min TTL, injecting session notes into all agents) and long-term (SQLite-persisted user preferences), with automatic DB fallback on server restart.
 > - Patched DeepSeek's DSML-style tool_call output; refactored `ClientSession` into short-lived connections to fix an anyio cancel-scope crossover bug hanging SSE streams; delivered streaming via FastAPI + sse-starlette with mid-stream `AbortController` cancellation.
 
@@ -294,7 +304,7 @@ travelagent/
 - Streaming is at agent granularity; tokens inside one agent reply are not streamed
 - The testing agent only does single-pass PASS/WARN, no auto-retry
 - No OAuth; user IDs are hardcoded by the frontend, used only for preference persistence demo
-- Ctrip is mock-only (the official MCP is enterprise-only)
+- Hotel results depend on AIGOHOTEL MCP availability; falls back to mock when the token is not configured
 - Session notes are written only by the interaction agent; other agents don't auto-extract context yet
 
 ## 📄 License
