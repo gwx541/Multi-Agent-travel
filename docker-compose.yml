@@ -1,0 +1,57 @@
+services:
+  backend:
+    build: .
+    image: travelagent-backend:latest
+    container_name: travelagent
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      APP_HOST: "0.0.0.0"
+      APP_PORT: "8000"
+      # host 网络模式下直接用 localhost 访问宿主机上的 jaeger
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://127.0.0.1:4318}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  # Jaeger：可观测性 UI，默认随 backend 一起启动
+  # 看 trace：http://127.0.0.1:16686
+  # 不想要：docker compose up -d --scale jaeger=0
+  jaeger:
+    image: jaegertracing/all-in-one:1.62
+    container_name: travelagent-jaeger
+    ports:
+      - "16686:16686"  # UI
+      - "4318:4318"    # OTLP HTTP
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    restart: unless-stopped
+
+  # 可选：本地小红书 MCP（社区版，需自行扫码登录）
+  # 启用：docker compose --profile xhs up -d
+  # 首次登录：docker exec -it travelagent python /app/scripts/xhs_login.py
+  #   或：从 backend 调 MCP 工具 get_login_qrcode 把二维码保存到 data/xhs_qr.png 扫码
+  # cookies.json 通过 bind mount 持久化到 ./xhs-data/cookies.json，重启免扫码。
+  xhs-mcp:
+    image: xpzouying/xiaohongshu-mcp:latest
+    container_name: xhs-mcp
+    ports:
+      - "18060:18060"
+    volumes:
+      - ./xhs-data:/app/data
+      - ./xhs-data/cookies.json:/app/cookies.json
+    profiles: ["xhs"]
+    restart: unless-stopped
+
+  # 可选：本地 12306 MCP（默认推荐走魔搭 SSE，免本地部署）
+  # 启用：docker compose --profile train up -d
+  train12306-mcp:
+    image: node:20-slim
+    container_name: 12306-mcp
+    working_dir: /tmp
+    command: ["npx", "-y", "12306-mcp", "--port", "8088"]
+    ports:
+      - "8088:8088"
+    profiles: ["train"]
+    restart: unless-stopped

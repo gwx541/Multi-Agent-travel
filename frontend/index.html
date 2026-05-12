@@ -1,0 +1,1385 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>智能旅行助手</title>
+<style>
+  :root {
+    --primary: #ff5777;
+    --bg: #f3f4f6;
+    --bubble-user: #ff5777;
+    --bubble-bot: #ffffff;
+    --text: #222;
+    --muted: #888;
+    --border: #e5e7eb;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(135deg, #fde2e4 0%, #c8e7ff 100%);
+    color: var(--text);
+  }
+  .stage {
+    height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .phone {
+    width: 414px; height: 90vh; max-height: 896px;
+    background: var(--bg);
+    border-radius: 44px;
+    border: 10px solid #1a1a1a;
+    box-shadow: 0 30px 60px rgba(0,0,0,0.25);
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    position: relative;
+  }
+  .notch {
+    position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: 140px; height: 26px;
+    background: #1a1a1a; border-radius: 0 0 18px 18px; z-index: 5;
+  }
+  header {
+    padding: 36px 16px 12px;
+    background: var(--primary);
+    color: #fff;
+    display: flex; align-items: center; gap: 10px;
+  }
+  header .avatar {
+    width: 36px; height: 36px; border-radius: 18px;
+    background: #fff; color: var(--primary);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700;
+  }
+  header .title { font-weight: 600; font-size: 16px; }
+  header .sub { font-size: 12px; opacity: 0.85; }
+  .toolbar {
+    margin-left: auto; display: flex; gap: 6px; align-items: center;
+  }
+  .toolbar button {
+    background: rgba(255,255,255,0.2); color: #fff;
+    border: none; padding: 6px 10px; border-radius: 14px;
+    font-size: 12px; cursor: pointer;
+  }
+  .toolbar button:hover { background: rgba(255,255,255,0.32); }
+  header .hamburger {
+    background: rgba(255,255,255,0.2); color: #fff;
+    border: none; width: 30px; height: 30px; border-radius: 15px;
+    font-size: 16px; cursor: pointer; flex: none;
+  }
+  header .hamburger:hover { background: rgba(255,255,255,0.32); }
+
+  .drawer-backdrop {
+    position: absolute; inset: 0; z-index: 20;
+    background: rgba(0,0,0,0.35);
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  .drawer-backdrop.show { opacity: 1; pointer-events: auto; }
+  .conversations-drawer {
+    position: absolute; top: 0; left: 0; bottom: 0;
+    width: 78%; max-width: 320px; z-index: 30;
+    background: #fff;
+    transform: translateX(-100%); transition: transform 0.22s ease;
+    display: flex; flex-direction: column;
+    box-shadow: 6px 0 20px rgba(0,0,0,0.12);
+  }
+  .conversations-drawer.show { transform: translateX(0); }
+  .drawer-header {
+    padding: 36px 14px 10px; background: var(--primary); color: #fff;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .drawer-header strong { font-size: 15px; font-weight: 600; }
+  .drawer-header button {
+    background: rgba(255,255,255,0.25); color: #fff;
+    border: none; width: 26px; height: 26px; border-radius: 13px;
+    font-size: 16px; cursor: pointer; line-height: 1;
+  }
+  .new-conv-btn {
+    margin: 10px 12px; padding: 10px 12px;
+    background: #fff; color: var(--primary);
+    border: 1px dashed var(--primary); border-radius: 12px;
+    cursor: pointer; font-size: 13px; font-weight: 600;
+    text-align: center;
+  }
+  .new-conv-btn:hover { background: #fff5f7; }
+  .conv-list {
+    list-style: none; margin: 0; padding: 4px 8px 16px;
+    overflow-y: auto; flex: 1;
+  }
+  .conv-item {
+    position: relative;
+    padding: 10px 12px; border-radius: 10px;
+    cursor: pointer; margin-bottom: 4px;
+    font-size: 13px; line-height: 1.4;
+    border: 1px solid transparent;
+  }
+  .conv-item:hover { background: #f9fafb; }
+  .conv-item.active {
+    background: #fff5f7; border-color: #fde7ec; color: var(--primary);
+  }
+  .conv-item .conv-title {
+    font-weight: 500; color: #111;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    padding-right: 50px;
+  }
+  .conv-item.active .conv-title { color: var(--primary); }
+  .conv-item .conv-meta {
+    font-size: 11px; color: var(--muted); margin-top: 2px;
+  }
+  .conv-item .conv-actions {
+    position: absolute; top: 6px; right: 6px;
+    display: none; gap: 2px;
+  }
+  .conv-item:hover .conv-actions { display: inline-flex; }
+  .conv-item .conv-actions button {
+    background: none; border: none; cursor: pointer;
+    width: 22px; height: 22px; border-radius: 4px;
+    font-size: 11px; color: var(--muted);
+  }
+  .conv-item .conv-actions button:hover { background: #fef2f2; color: var(--primary); }
+
+  .chat {
+    flex: 1; overflow-y: auto;
+    padding: 12px;
+    display: flex; flex-direction: column; gap: 10px;
+    scroll-behavior: smooth;
+  }
+  .msg { max-width: 85%; padding: 10px 12px; border-radius: 14px; font-size: 14px; line-height: 1.55; word-wrap: break-word; position: relative; }
+  .msg.user { align-self: flex-end; background: var(--bubble-user); color: #fff; border-bottom-right-radius: 4px; }
+  .msg.bot { align-self: flex-start; background: var(--bubble-bot); color: var(--text); border-bottom-left-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .msg.sys { align-self: center; background: rgba(0,0,0,0.05); color: var(--muted); font-size: 12px; padding: 4px 10px; border-radius: 10px; }
+
+  .msg .msg-actions {
+    position: absolute; top: 4px;
+    display: none; gap: 4px;
+    background: rgba(255,255,255,0.95);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 2px 4px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  }
+  .msg.user .msg-actions { left: -8px; transform: translateX(-100%); }
+  .msg.bot .msg-actions { right: -8px; transform: translateX(100%); }
+  .msg[data-msg-id]:hover .msg-actions { display: inline-flex; }
+  body.busy .msg-actions { display: none !important; }
+  .msg .msg-actions button {
+    background: none; border: none; cursor: pointer;
+    padding: 2px 6px; border-radius: 6px;
+    font-size: 12px; color: var(--muted);
+  }
+  .msg .msg-actions button:hover { background: #fef2f2; color: var(--primary); }
+
+  .msg.editing { outline: 2px dashed var(--primary); outline-offset: 2px; }
+  .msg .edit-area {
+    display: flex; flex-direction: column; gap: 6px;
+    min-width: 240px;
+  }
+  .msg.user .edit-area textarea {
+    background: rgba(255,255,255,0.18);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.5);
+  }
+  .msg.user .edit-area textarea::placeholder { color: rgba(255,255,255,0.7); }
+  .msg .edit-area textarea {
+    width: 100%; min-height: 60px; max-height: 240px;
+    box-sizing: border-box;
+    padding: 6px 8px; font-size: 14px; line-height: 1.5;
+    font-family: inherit; resize: vertical;
+    border-radius: 8px; border: 1px solid var(--border);
+    outline: none;
+  }
+  .msg .edit-area .edit-buttons {
+    display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end;
+  }
+  .msg .edit-area button {
+    border: none; cursor: pointer; padding: 4px 10px;
+    border-radius: 8px; font-size: 12px;
+  }
+  .msg .edit-area .btn-regen { background: var(--primary); color: #fff; }
+  .msg .edit-area .btn-save  { background: #2563eb; color: #fff; }
+  .msg .edit-area .btn-cancel { background: #e5e7eb; color: #374151; }
+  .msg .edit-area button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .agent-tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 8px; background: #eef2ff; color: #4338ca; margin-bottom: 6px; }
+  .agent-tag.manager { background: #fff7ed; color: #c2410c; }
+  .agent-tag.testing { background: #ecfdf5; color: #047857; }
+
+  .msg.bot img { max-width: 100%; border-radius: 8px; margin: 6px 0; display: block; }
+  .msg.bot a { color: var(--primary); text-decoration: none; }
+  .msg.bot pre { background: #f6f8fa; padding: 8px; border-radius: 6px; overflow-x: auto; font-size: 12px; margin: 6px 0; }
+  .msg.bot code { background: #f3f4f6; color: #c2410c; padding: 1px 5px; border-radius: 4px; font-size: 12px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .msg.bot pre code { background: transparent; color: inherit; padding: 0; }
+  .msg.bot table { border-collapse: collapse; width: 100%; font-size: 12px; margin: 6px 0; }
+  .msg.bot th, .msg.bot td { border: 1px solid var(--border); padding: 5px 7px; text-align: left; }
+  .msg.bot th { background: #fafafa; font-weight: 600; }
+  .msg.bot h1, .msg.bot h2, .msg.bot h3, .msg.bot h4 { margin: 10px 0 4px; line-height: 1.3; font-weight: 600; }
+  .msg.bot h1 { font-size: 16px; }
+  .msg.bot h2 { font-size: 15px; color: var(--primary); }
+  .msg.bot h3 { font-size: 14px; }
+  .msg.bot h4 { font-size: 13px; color: #555; }
+  .msg.bot p { margin: 4px 0; }
+  .msg.bot ul, .msg.bot ol { margin: 4px 0; padding-left: 22px; }
+  .msg.bot li { margin: 2px 0; }
+  .msg.bot blockquote { margin: 6px 0; padding: 4px 10px; border-left: 3px solid var(--primary); background: #fff5f7; color: #555; border-radius: 0 6px 6px 0; }
+  .msg.bot hr { border: none; border-top: 1px dashed var(--border); margin: 8px 0; }
+  .msg.bot strong { color: #111; }
+
+  .poi-link { color: var(--primary); text-decoration: none; border-bottom: 1px dashed var(--primary); padding: 0 1px; }
+  .poi-link:hover { background: #fff5f7; }
+  .xhs-link {
+    color: #ff2442; text-decoration: none; font-weight: 500;
+    border-bottom: 1px dashed #ff2442; padding: 0 1px;
+  }
+  .xhs-link:hover { background: #ffeef0; }
+  .hotel-link {
+    color: #1565c0; text-decoration: none; font-weight: 500;
+    border-bottom: 1px dashed #1565c0; padding: 0 1px;
+  }
+  .hotel-link:hover { background: #e3f2fd; }
+  .train-link {
+    color: #2e7d32; text-decoration: none; font-weight: 500;
+    border-bottom: 1px dashed #2e7d32; padding: 0 1px;
+  }
+  .train-link:hover { background: #e8f5e9; }
+
+  .cards { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .card {
+    border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+    background: #fafafa; display: flex; gap: 8px;
+  }
+  .card img { width: 96px; height: 96px; object-fit: cover; flex: 0 0 96px; }
+  .card .body { flex: 1; padding: 8px 6px 8px 0; min-width: 0; }
+  .card .body .t { font-weight: 600; font-size: 13px; color: #111; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .card .body .d { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .card .body .a { font-size: 12px; color: var(--primary); margin-top: 4px; display: inline-block; }
+
+  .typing { display: inline-flex; gap: 4px; padding: 6px 0; }
+  .typing span { width: 6px; height: 6px; background: var(--muted); border-radius: 50%; animation: bounce 1.2s infinite; }
+  .typing span:nth-child(2) { animation-delay: .15s; }
+  .typing span:nth-child(3) { animation-delay: .3s; }
+  @keyframes bounce {
+    0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+    30% { transform: translateY(-4px); opacity: 1; }
+  }
+
+  footer {
+    padding: 8px 10px 14px;
+    background: #fff; border-top: 1px solid var(--border);
+    display: flex; gap: 8px; align-items: center;
+  }
+  footer input {
+    flex: 1; padding: 10px 12px; border-radius: 18px;
+    border: 1px solid var(--border); outline: none; font-size: 14px;
+  }
+  footer input:focus { border-color: var(--primary); }
+  footer button {
+    background: var(--primary); color: #fff; border: none;
+    padding: 10px 16px; border-radius: 18px; font-size: 14px; cursor: pointer;
+  }
+  footer button:disabled { background: #ccc; cursor: not-allowed; }
+  footer button.stop { background: #e53935; }
+  footer button.stop:hover { background: #c62828; }
+
+  .loc-pill {
+    font-size: 11px; color: var(--muted); padding: 2px 6px;
+    background: #f3f4f6; border-radius: 8px; margin-right: 6px;
+  }
+  .user-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 12px; color: var(--primary);
+    background: #fff5f7; border: 1px solid #fde7ec;
+    padding: 2px 8px; border-radius: 10px;
+    max-width: 160px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .user-pill::before {
+    content: '👤';
+    font-size: 11px;
+  }
+
+  .auth-overlay {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(253, 226, 228, 0.92);
+    backdrop-filter: blur(6px);
+    display: none; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .auth-overlay.show { display: flex; }
+  .auth-card {
+    width: 100%; max-width: 360px;
+    background: #fff; border-radius: 20px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.12);
+    padding: 22px 20px;
+    border: 1px solid var(--border);
+  }
+  .auth-card h2 { margin: 0 0 6px; font-size: 18px; color: #111; }
+  .auth-card .hint { margin: 0 0 16px; font-size: 13px; color: var(--muted); line-height: 1.45; }
+  .auth-card label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .auth-card input {
+    width: 100%; padding: 10px 12px; margin-bottom: 12px;
+    border: 1px solid var(--border); border-radius: 10px; font-size: 14px;
+    box-sizing: border-box;
+  }
+  .auth-actions { display: flex; gap: 8px; margin-top: 8px; }
+  .auth-actions button {
+    flex: 1; padding: 10px; border-radius: 10px; border: none; cursor: pointer;
+    font-size: 14px; font-weight: 500;
+  }
+  .auth-actions .primary { background: var(--primary); color: #fff; }
+  .auth-actions .ghost { background: #f3f4f6; color: #333; }
+  .auth-err { color: #c62828; font-size: 12px; margin-top: 8px; min-height: 18px; }
+</style>
+</head>
+<body>
+<div id="authOverlay" class="auth-overlay">
+  <div class="auth-card">
+    <h2>登录后继续</h2>
+    <p class="hint">行程规划与火车票、机票等查询会记入你的账户，与他人隔离。</p>
+    <label for="authEmail">邮箱</label>
+    <input type="email" id="authEmail" autocomplete="username" />
+    <label for="authPassword">密码（至少 8 位）</label>
+    <input type="password" id="authPassword" autocomplete="current-password" />
+    <div id="authErr" class="auth-err"></div>
+    <div class="auth-actions">
+      <button type="button" class="ghost" id="authRegister">注册</button>
+      <button type="button" class="primary" id="authLogin">登录</button>
+    </div>
+  </div>
+</div>
+<div class="stage">
+  <div class="phone">
+    <div class="notch"></div>
+    <div class="drawer-backdrop" id="drawerBackdrop"></div>
+    <aside class="conversations-drawer" id="convDrawer">
+      <div class="drawer-header">
+        <strong>历史会话</strong>
+        <button type="button" id="btnCloseDrawer" title="关闭">×</button>
+      </div>
+      <button type="button" id="btnNewConv" class="new-conv-btn">+ 新对话</button>
+      <ul class="conv-list" id="convList"></ul>
+    </aside>
+    <header>
+      <button type="button" id="btnDrawer" class="hamburger" title="历史会话">☰</button>
+      <div class="avatar">旅</div>
+      <div>
+        <div class="title" id="convTitle">小旅 · 行程规划与票务</div>
+        <div class="sub" id="locStatus">未获取定位</div>
+      </div>
+      <div class="toolbar">
+        <span id="currentUser" class="user-pill" style="display:none" title="当前登录账户"></span>
+        <button id="btnLogout" type="button" title="退出登录" style="display:none">退出</button>
+        <button id="btnLoc" title="模拟用户当前位置">定位</button>
+      </div>
+    </header>
+    <div class="chat" id="chat"></div>
+    <footer>
+      <input id="input" placeholder="想去哪儿？比如：5月去成都3天，预算3000，喜欢小众" />
+      <button id="send">发送</button>
+    </footer>
+  </div>
+</div>
+
+<script>
+const chat = document.getElementById('chat');
+const input = document.getElementById('input');
+const sendBtn = document.getElementById('send');
+const btnLoc = document.getElementById('btnLoc');
+const btnDrawer = document.getElementById('btnDrawer');
+const btnCloseDrawer = document.getElementById('btnCloseDrawer');
+const btnNewConv = document.getElementById('btnNewConv');
+const drawerBackdrop = document.getElementById('drawerBackdrop');
+const convDrawer = document.getElementById('convDrawer');
+const convListEl = document.getElementById('convList');
+const convTitleEl = document.getElementById('convTitle');
+const locStatus = document.getElementById('locStatus');
+const authOverlay = document.getElementById('authOverlay');
+const authEmail = document.getElementById('authEmail');
+const authPassword = document.getElementById('authPassword');
+const authErr = document.getElementById('authErr');
+const authLogin = document.getElementById('authLogin');
+const authRegister = document.getElementById('authRegister');
+const btnLogout = document.getElementById('btnLogout');
+const currentUserEl = document.getElementById('currentUser');
+
+const LS_TOKEN = 'travelagent_access_token';
+let accessToken = localStorage.getItem(LS_TOKEN) || '';
+let authRequired = false;
+let currentLocation = null;
+
+function authHeaders() {
+  const h = {'Content-Type': 'application/json'};
+  if (accessToken) h['Authorization'] = 'Bearer ' + accessToken;
+  return h;
+}
+
+function setAuthErr(msg) {
+  authErr.textContent = msg || '';
+}
+
+function setLogoutVisible(on) {
+  btnLogout.style.display = on ? 'inline-block' : 'none';
+}
+
+function setCurrentUser(user) {
+  if (user && user.email) {
+    currentUserEl.textContent = user.email;
+    currentUserEl.title = user.email + (user.id ? ' · ' + user.id : '');
+    currentUserEl.style.display = 'inline-flex';
+  } else {
+    currentUserEl.textContent = '';
+    currentUserEl.removeAttribute('title');
+    currentUserEl.style.display = 'none';
+  }
+}
+
+function showAuthOverlay(show) {
+  if (show) authOverlay.classList.add('show');
+  else authOverlay.classList.remove('show');
+}
+
+async function probeMe() {
+  if (!accessToken) return null;
+  try {
+    const r = await fetch('/api/auth/me', {headers: {Authorization: 'Bearer ' + accessToken}});
+    if (!r.ok) return null;
+    const data = await r.json().catch(() => ({}));
+    return data && data.user ? data.user : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function initAuth() {
+  let cfg = {};
+  try {
+    const r = await fetch('/api/config');
+    cfg = await r.json();
+  } catch (e) {}
+  authRequired = !!cfg.auth_required;
+  if (!authRequired) {
+    showAuthOverlay(false);
+    setLogoutVisible(false);
+    setCurrentUser(null);
+    return;
+  }
+  showAuthOverlay(true);
+  setAuthErr('');
+  if (accessToken) {
+    const me = await probeMe();
+    if (me) {
+      showAuthOverlay(false);
+      setLogoutVisible(true);
+      setCurrentUser(me);
+      return;
+    }
+  }
+  accessToken = '';
+  localStorage.removeItem(LS_TOKEN);
+  setLogoutVisible(false);
+  setCurrentUser(null);
+}
+
+async function doAuth(path) {
+  setAuthErr('');
+  const email = (authEmail.value || '').trim();
+  const password = authPassword.value || '';
+  if (!email || !password) {
+    setAuthErr('请填写邮箱和密码');
+    return;
+  }
+  try {
+    const r = await fetch(path, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({email, password}),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      setAuthErr(data.detail || ('请求失败 ' + r.status));
+      return;
+    }
+    accessToken = data.access_token;
+    localStorage.setItem(LS_TOKEN, accessToken);
+    showAuthOverlay(false);
+    setLogoutVisible(true);
+    setCurrentUser(data.user || {email});
+    authPassword.value = '';
+    localStorage.removeItem(LS_CURRENT_CID);
+    currentConversationId = null;
+    await loadConversations();
+    await loadHistory(currentConversationId);
+    appendSys('已登录为 ' + ((data.user && data.user.email) || email) + '，记忆与行程将绑定当前账户。');
+  } catch (e) {
+    setAuthErr(e.message || '网络错误');
+  }
+}
+
+authLogin.addEventListener('click', () => doAuth('/api/auth/login'));
+authRegister.addEventListener('click', () => doAuth('/api/auth/register'));
+btnLogout.addEventListener('click', () => {
+  accessToken = '';
+  localStorage.removeItem(LS_TOKEN);
+  localStorage.removeItem(LS_CURRENT_CID);
+  currentConversationId = null;
+  conversationsCache = [];
+  setLogoutVisible(false);
+  setCurrentUser(null);
+  chat.innerHTML = '';
+  convListEl.innerHTML = '';
+  convTitleEl.textContent = '小旅 · 行程规划与票务';
+  if (authRequired) {
+    showAuthOverlay(true);
+    appendSys('已退出登录');
+  }
+});
+
+function appendMsg(kind, html, agentName, opts) {
+  opts = opts || {};
+  const div = document.createElement('div');
+  div.className = 'msg ' + kind;
+  if (agentName) {
+    const tag = document.createElement('span');
+    tag.className = 'agent-tag' + (agentName === 'manager' ? ' manager' : agentName === 'testing_agent' ? ' testing' : '');
+    tag.textContent = agentName;
+    div.appendChild(tag);
+    div.appendChild(document.createElement('br'));
+  }
+  const body = document.createElement('div');
+  body.className = 'msg-body';
+  body.innerHTML = html;
+  div.appendChild(body);
+
+  if (opts.rawText != null) div.dataset.rawText = opts.rawText;
+  if (opts.messageId != null) div.dataset.msgId = String(opts.messageId);
+
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+  return div;
+}
+
+function setMsgId(div, messageId, rawText) {
+  if (!div || messageId == null) return;
+  div.dataset.msgId = String(messageId);
+  if (rawText != null) div.dataset.rawText = rawText;
+}
+
+// 仅在"最后一条带 id 的 user 消息"上挂【编辑】按钮，其它消息一律只读
+function refreshEditableTarget() {
+  chat.querySelectorAll('.msg-actions').forEach(el => el.remove());
+  const userBubbles = chat.querySelectorAll('.msg.user[data-msg-id]');
+  const target = userBubbles.length ? userBubbles[userBubbles.length - 1] : null;
+  if (!target) return;
+  if (target.classList.contains('editing')) return;
+  const bar = document.createElement('div');
+  bar.className = 'msg-actions';
+  const btnEdit = document.createElement('button');
+  btnEdit.type = 'button';
+  btnEdit.title = '编辑这条消息（仅保存或重新生成）';
+  btnEdit.textContent = '✎ 编辑';
+  btnEdit.addEventListener('click', () => enterEditMode(target));
+  bar.appendChild(btnEdit);
+  target.appendChild(bar);
+}
+
+function enterEditMode(div) {
+  if (busy) {
+    appendSys('正在生成中，请先停止再编辑');
+    return;
+  }
+  if (div.classList.contains('editing')) return;
+  // 编辑期间移除其它工具栏，避免多入口
+  chat.querySelectorAll('.msg-actions').forEach(el => el.remove());
+  const body = div.querySelector('.msg-body');
+  const original = div.dataset.rawText != null ? div.dataset.rawText : body.textContent;
+  const prevHtml = body.innerHTML;
+  div.classList.add('editing');
+
+  const wrap = document.createElement('div');
+  wrap.className = 'edit-area';
+  const ta = document.createElement('textarea');
+  ta.value = original;
+  const btns = document.createElement('div');
+  btns.className = 'edit-buttons';
+
+  const btnCancel = document.createElement('button');
+  btnCancel.type = 'button';
+  btnCancel.textContent = '取消';
+  btnCancel.className = 'btn-cancel';
+
+  const btnSave = document.createElement('button');
+  btnSave.type = 'button';
+  btnSave.textContent = '仅保存';
+  btnSave.className = 'btn-save';
+
+  const btnRegen = document.createElement('button');
+  btnRegen.type = 'button';
+  btnRegen.textContent = '保存并重新生成';
+  btnRegen.className = 'btn-regen';
+
+  btns.appendChild(btnCancel);
+  btns.appendChild(btnSave);
+  btns.appendChild(btnRegen);
+
+  wrap.appendChild(ta);
+  wrap.appendChild(btns);
+  body.replaceWith(wrap);
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+
+  function restore(newBodyHtml, newRawText) {
+    div.classList.remove('editing');
+    const fresh = document.createElement('div');
+    fresh.className = 'msg-body';
+    fresh.innerHTML = newBodyHtml != null ? newBodyHtml : prevHtml;
+    wrap.replaceWith(fresh);
+    if (newRawText != null) div.dataset.rawText = newRawText;
+    refreshEditableTarget();
+  }
+
+  btnCancel.addEventListener('click', () => restore());
+
+  btnSave.addEventListener('click', async () => {
+    const content = ta.value.trim();
+    if (!content) { appendSys('内容不能为空'); return; }
+    if (content === original) { restore(); return; }
+    btnSave.disabled = true; btnCancel.disabled = true; btnRegen.disabled = true;
+    try {
+      await patchMessage(div.dataset.msgId, content);
+      restore(escapeHtml(content), content);
+    } catch (e) {
+      appendSys('保存失败：' + e.message);
+      btnSave.disabled = false; btnCancel.disabled = false; btnRegen.disabled = false;
+    }
+  });
+
+  btnRegen.addEventListener('click', () => {
+    const content = ta.value.trim();
+    if (!content) { appendSys('内容不能为空'); return; }
+    if (!confirm('将删除此消息之后的所有回复，并用新内容重新生成。继续？')) return;
+    div.classList.remove('editing');
+    const fresh = document.createElement('div');
+    fresh.className = 'msg-body';
+    fresh.innerHTML = escapeHtml(content);
+    wrap.replaceWith(fresh);
+    div.dataset.rawText = content;
+    removeMessagesAfter(div);
+    send(content, { replaceMessageId: Number(div.dataset.msgId), userBubble: div });
+  });
+}
+
+async function patchMessage(messageId, content) {
+  const r = await fetch('/api/messages/' + encodeURIComponent(messageId), {
+    method: 'PATCH',
+    headers: Object.assign({'Content-Type': 'application/json'}, authHeaders()),
+    body: JSON.stringify({content}),
+  });
+  if (!r.ok) throw new Error('PATCH ' + r.status);
+  return await r.json();
+}
+
+function removeMessagesAfter(div) {
+  let n = div.nextSibling;
+  while (n) {
+    const next = n.nextSibling;
+    if (n.nodeType === 1 && n.classList && n.classList.contains('msg')) n.remove();
+    n = next;
+  }
+}
+
+const LS_CURRENT_CID = 'travelagent_current_cid';
+let currentConversationId = localStorage.getItem(LS_CURRENT_CID) || null;
+let conversationsCache = [];
+
+function setCurrentConversation(cid, opts) {
+  opts = opts || {};
+  currentConversationId = cid || null;
+  if (cid) localStorage.setItem(LS_CURRENT_CID, cid);
+  else localStorage.removeItem(LS_CURRENT_CID);
+  const conv = (conversationsCache || []).find(c => c.id === cid);
+  convTitleEl.textContent = conv && conv.title
+    ? conv.title
+    : (cid ? '未命名对话' : '小旅 · 行程规划与票务');
+  renderConvList();
+}
+
+async function loadHistory(cid) {
+  try {
+    const url = cid
+      ? '/api/messages?conversation_id=' + encodeURIComponent(cid)
+      : '/api/messages';
+    const r = await fetch(url, {headers: authHeaders()});
+    if (!r.ok) return;
+    const data = await r.json();
+    const msgs = Array.isArray(data.messages) ? data.messages : [];
+    chat.innerHTML = '';
+    if (!msgs.length) {
+      appendMsg('bot', '你好呀～我是小旅，专注<strong>行程规划</strong>与<strong>火车票、机票、酒店</strong>等票务协助 ✨<br>告诉我目的地、时间和预算，我帮你排行程、查余票～');
+    } else {
+      for (const m of msgs) {
+        if (m.role === 'user') {
+          appendMsg('user', escapeHtml(m.content), null, {messageId: m.id, rawText: m.content});
+        } else if (m.role === 'assistant') {
+          appendMsg('bot', renderMarkdown(m.content), null, {messageId: m.id, rawText: m.content});
+        }
+      }
+    }
+    if (data.conversation_id) setCurrentConversation(data.conversation_id);
+    refreshEditableTarget();
+  } catch (e) { /* 静默：登录前会失败 */ }
+}
+
+async function loadConversations() {
+  try {
+    const r = await fetch('/api/conversations', {headers: authHeaders()});
+    if (!r.ok) return;
+    const data = await r.json();
+    conversationsCache = Array.isArray(data.conversations) ? data.conversations : [];
+    renderConvList();
+    // 选中策略：localStorage 里的 cid 仍存在 → 用它；否则用列表第一项
+    const existing = conversationsCache.find(c => c.id === currentConversationId);
+    if (!existing && conversationsCache.length) {
+      setCurrentConversation(conversationsCache[0].id);
+    } else if (existing) {
+      setCurrentConversation(existing.id);
+    }
+  } catch (e) { /* 静默 */ }
+}
+
+function renderConvList() {
+  convListEl.innerHTML = '';
+  if (!conversationsCache.length) {
+    const empty = document.createElement('li');
+    empty.style.color = '#888';
+    empty.style.padding = '12px';
+    empty.style.fontSize = '12px';
+    empty.textContent = '还没有任何对话，点上方「+ 新对话」开始';
+    convListEl.appendChild(empty);
+    return;
+  }
+  for (const conv of conversationsCache) {
+    const li = document.createElement('li');
+    li.className = 'conv-item' + (conv.id === currentConversationId ? ' active' : '');
+    li.dataset.cid = conv.id;
+
+    const title = document.createElement('div');
+    title.className = 'conv-title';
+    title.textContent = conv.title || '未命名对话';
+    const meta = document.createElement('div');
+    meta.className = 'conv-meta';
+    const dt = conv.updated_at ? new Date(conv.updated_at) : null;
+    meta.textContent = (conv.message_count || 0) + ' 条 · '
+      + (dt ? dt.toLocaleString('zh-CN', {hour12: false}).slice(5) : '');
+
+    const actions = document.createElement('div');
+    actions.className = 'conv-actions';
+    const btnRename = document.createElement('button');
+    btnRename.type = 'button';
+    btnRename.title = '重命名';
+    btnRename.textContent = '✎';
+    btnRename.addEventListener('click', e => {
+      e.stopPropagation();
+      renameConversation(conv);
+    });
+    const btnDel = document.createElement('button');
+    btnDel.type = 'button';
+    btnDel.title = '删除会话';
+    btnDel.textContent = '✕';
+    btnDel.addEventListener('click', e => {
+      e.stopPropagation();
+      deleteConversation(conv);
+    });
+    actions.appendChild(btnRename);
+    actions.appendChild(btnDel);
+
+    li.appendChild(title);
+    li.appendChild(meta);
+    li.appendChild(actions);
+    li.addEventListener('click', () => {
+      if (conv.id !== currentConversationId) {
+        setCurrentConversation(conv.id);
+        loadHistory(conv.id);
+      }
+      closeDrawer();
+    });
+    convListEl.appendChild(li);
+  }
+}
+
+async function createNewConversation() {
+  try {
+    const r = await fetch('/api/conversations', {
+      method: 'POST',
+      headers: Object.assign({'Content-Type': 'application/json'}, authHeaders()),
+      body: '{}',
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const conv = await r.json();
+    conversationsCache = [conv].concat(conversationsCache);
+    setCurrentConversation(conv.id);
+    chat.innerHTML = '';
+    appendMsg('bot', '新对话开始啦～有什么旅行需求都可以问我。');
+    refreshEditableTarget();
+    closeDrawer();
+  } catch (e) {
+    appendSys('新建对话失败：' + e.message);
+  }
+}
+
+async function renameConversation(conv) {
+  const next = (prompt('重命名对话：', conv.title || '') || '').trim();
+  if (!next || next === conv.title) return;
+  try {
+    const r = await fetch('/api/conversations/' + encodeURIComponent(conv.id), {
+      method: 'PATCH',
+      headers: Object.assign({'Content-Type': 'application/json'}, authHeaders()),
+      body: JSON.stringify({title: next}),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const updated = await r.json();
+    Object.assign(conv, updated);
+    if (conv.id === currentConversationId) {
+      convTitleEl.textContent = updated.title || '未命名对话';
+    }
+    renderConvList();
+  } catch (e) {
+    appendSys('重命名失败：' + e.message);
+  }
+}
+
+async function deleteConversation(conv) {
+  if (!confirm('确定删除会话「' + (conv.title || '未命名对话') + '」？\n该会话内的所有消息将一并删除，不可恢复。')) return;
+  try {
+    const r = await fetch('/api/conversations/' + encodeURIComponent(conv.id), {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    conversationsCache = conversationsCache.filter(c => c.id !== conv.id);
+    const wasCurrent = conv.id === currentConversationId;
+    if (wasCurrent) {
+      const fallback = conversationsCache[0];
+      if (fallback) {
+        setCurrentConversation(fallback.id);
+        await loadHistory(fallback.id);
+      } else {
+        setCurrentConversation(null);
+        chat.innerHTML = '';
+        appendMsg('bot', '当前没有对话，点左上角「+ 新对话」开始～');
+        refreshEditableTarget();
+      }
+    } else {
+      renderConvList();
+    }
+  } catch (e) {
+    appendSys('删除失败：' + e.message);
+  }
+}
+
+function openDrawer() {
+  convDrawer.classList.add('show');
+  drawerBackdrop.classList.add('show');
+}
+function closeDrawer() {
+  convDrawer.classList.remove('show');
+  drawerBackdrop.classList.remove('show');
+}
+
+btnDrawer.addEventListener('click', () => {
+  loadConversations();
+  openDrawer();
+});
+btnCloseDrawer.addEventListener('click', closeDrawer);
+drawerBackdrop.addEventListener('click', closeDrawer);
+btnNewConv.addEventListener('click', createNewConversation);
+
+function appendSys(text) {
+  const div = document.createElement('div');
+  div.className = 'msg sys';
+  div.textContent = text;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+const XHS_HOST_RE = /^https?:\/\/[^\/\s]*?(xiaohongshu\.com|xhslink\.com)\b/i;
+const HOTEL_HOST_RE = /^https?:\/\/[^\/\s]*?(ctrip\.com|trip\.com|elong\.com|rollinggo\.cn|aigohotel\.com)\b/i;
+const TRAIN_HOST_RE = /^https?:\/\/[^\/\s]*?12306\.cn\b/i;
+
+function classifyLink(url) {
+  if (XHS_HOST_RE.test(url)) return 'xhs-link';
+  if (HOTEL_HOST_RE.test(url)) return 'hotel-link';
+  if (TRAIN_HOST_RE.test(url)) return 'train-link';
+  return null;
+}
+
+function renderMarkdown(md) {
+  if (!md) return '';
+  let src = md;
+  src = src.replace(/!\[[^\]]*\]\([^)]+\)/g, '');
+  // 放行白名单域名（小红书 / 携程系），其它链接继续剥成纯文字
+  const safeLinks = [];
+  src = src.replace(/\[([^\]\n]+)\]\((https?:[^)\s]+)\)/g, (_m, text, url) => {
+    const cls = classifyLink(url);
+    if (cls) {
+      safeLinks.push({ text, url, cls });
+      return '\u0000XL' + (safeLinks.length - 1) + '\u0000';
+    }
+    return text;
+  });
+  src = src.replace(/(?<![\w/])https?:\/\/\S+/g, (m) => {
+    const cls = classifyLink(m);
+    if (cls) {
+      const fallbackText =
+        cls === 'xhs-link' ? '小红书笔记'
+        : cls === 'hotel-link' ? '携程酒店'
+        : '12306 购票';
+      safeLinks.push({ text: fallbackText, url: m, cls });
+      return '\u0000XL' + (safeLinks.length - 1) + '\u0000';
+    }
+    return '';
+  });
+
+  const codeBlocks = [];
+  src = src.replace(/```[a-zA-Z0-9_-]*\n([\s\S]*?)```/g, (_m, code) => {
+    codeBlocks.push('<pre><code>' + escapeHtml(code.replace(/\n$/, '')) + '</code></pre>');
+    return '\u0000CB' + (codeBlocks.length - 1) + '\u0000';
+  });
+
+  const inlineCodes = [];
+  src = src.replace(/`([^`\n]+)`/g, (_m, c) => {
+    inlineCodes.push('<code>' + escapeHtml(c) + '</code>');
+    return '\u0000IC' + (inlineCodes.length - 1) + '\u0000';
+  });
+
+  function inline(s) {
+    s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
+    s = s.replace(/(?<![\*\w])\*([^*\n]+)\*(?![\*\w])/g, '<em>$1</em>');
+    s = s.replace(/(?<![_\w])_([^_\n]+)_(?![_\w])/g, '<em>$1</em>');
+    return s;
+  }
+  function cell(text) { return inline(escapeHtml(text)); }
+  function splitRow(line) {
+    return line.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map(s => s.trim());
+  }
+  const blockStarter = /^(#{1,6}\s|\s*>|\s*\|.*\|\s*$|\s*[-*+]\s|\s*\d+\.\s|\s{0,3}[-*_]{3,}\s*$|```)/;
+
+  const lines = src.split('\n');
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) { i++; continue; }
+
+    let m = line.match(/^(#{1,6})\s+(.*)$/);
+    if (m) {
+      const lv = Math.min(m[1].length + 1, 4);
+      out.push('<h' + lv + '>' + cell(m[2]) + '</h' + lv + '>');
+      i++; continue;
+    }
+    if (/^\s{0,3}[-*_]{3,}\s*$/.test(line)) { out.push('<hr>'); i++; continue; }
+    if (line.trim().startsWith('>')) {
+      const buf = [];
+      while (i < lines.length && lines[i].trim().startsWith('>')) {
+        buf.push(lines[i].replace(/^\s*>\s?/, ''));
+        i++;
+      }
+      out.push('<blockquote>' + cell(buf.join(' ')) + '</blockquote>');
+      continue;
+    }
+    if (/^\s*\|.*\|\s*$/.test(line) && i + 1 < lines.length && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1])) {
+      const head = splitRow(lines[i]);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) {
+        rows.push(splitRow(lines[i]));
+        i++;
+      }
+      let t = '<table><thead><tr>' + head.map(c => '<th>' + cell(c) + '</th>').join('') + '</tr></thead><tbody>';
+      for (const r of rows) {
+        t += '<tr>' + r.map(c => '<td>' + cell(c) + '</td>').join('') + '</tr>';
+      }
+      t += '</tbody></table>';
+      out.push(t);
+      continue;
+    }
+    if (/^\s*[-*+]\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) {
+        items.push(lines[i].replace(/^\s*[-*+]\s+/, ''));
+        i++;
+      }
+      out.push('<ul>' + items.map(it => '<li>' + cell(it) + '</li>').join('') + '</ul>');
+      continue;
+    }
+    if (/^\s*\d+\.\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
+        items.push(lines[i].replace(/^\s*\d+\.\s+/, ''));
+        i++;
+      }
+      out.push('<ol>' + items.map(it => '<li>' + cell(it) + '</li>').join('') + '</ol>');
+      continue;
+    }
+    const buf = [line];
+    i++;
+    while (i < lines.length && lines[i].trim() && !blockStarter.test(lines[i])) {
+      buf.push(lines[i]);
+      i++;
+    }
+    out.push('<p>' + buf.map(l => cell(l)).join('<br>') + '</p>');
+  }
+
+  let html = out.join('');
+  html = html.replace(/\u0000IC(\d+)\u0000/g, (_m, n) => inlineCodes[+n]);
+  html = html.replace(/\u0000CB(\d+)\u0000/g, (_m, n) => codeBlocks[+n]);
+  html = html.replace(/\u0000XL(\d+)\u0000/g, (_m, n) => {
+    const it = safeLinks[+n];
+    return '<a class="' + it.cls + '" href="' + escapeHtml(it.url) + '" target="_blank" rel="noopener">'
+      + escapeHtml(it.text) + ' ↗</a>';
+  });
+  html = html.replace(/<p>(\s*<pre>[\s\S]*?<\/pre>\s*)<\/p>/g, '$1');
+  return html;
+}
+
+function buildPoiUrl(p, ctx) {
+  const city = (ctx && ctx.location_info && ctx.location_info.city) || '';
+  const name = encodeURIComponent(p.name);
+  // 有坐标用 marker 路径直接定位到该点；没有就用 web 关键词搜索
+  if (p.location && /^[\d.]+,[\d.]+$/.test(p.location)) {
+    return `https://uri.amap.com/marker?position=${p.location}&name=${name}&src=travelagent&coordinate=gaode`;
+  }
+  return `https://www.amap.com/search?query=${name}${city ? `&city=${encodeURIComponent(city)}` : ''}`;
+}
+
+
+function linkifyPois(html, pois, ctx) {
+  if (!pois || !pois.length) return html;
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  const sorted = [...pois]
+    .filter(p => p && p.name && p.name.length >= 2)
+    .sort((a, b) => b.name.length - a.name.length);
+  if (!sorted.length) return html;
+  const skipTags = new Set(['A', 'PRE', 'CODE', 'SCRIPT', 'STYLE']);
+  function walk(node) {
+    if (node.nodeType === 3) {
+      const txt = node.textContent;
+      if (!txt) return;
+      let pos = 0;
+      const frag = document.createDocumentFragment();
+      let changed = false;
+      while (pos < txt.length) {
+        let nextIdx = -1, nextPoi = null;
+        for (const p of sorted) {
+          const idx = txt.indexOf(p.name, pos);
+          if (idx >= 0 && (nextIdx === -1 || idx < nextIdx)) {
+            nextIdx = idx; nextPoi = p;
+            if (idx === pos) break;
+          }
+        }
+        if (nextPoi === null) {
+          frag.appendChild(document.createTextNode(txt.slice(pos)));
+          break;
+        }
+        if (nextIdx > pos) {
+          frag.appendChild(document.createTextNode(txt.slice(pos, nextIdx)));
+        }
+        const a = document.createElement('a');
+        a.href = buildPoiUrl(nextPoi, ctx);
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.className = 'poi-link';
+        a.textContent = nextPoi.name;
+        frag.appendChild(a);
+        pos = nextIdx + nextPoi.name.length;
+        changed = true;
+      }
+      if (changed) node.parentNode.replaceChild(frag, node);
+    } else if (node.nodeType === 1 && !skipTags.has(node.tagName)) {
+      for (const child of [...node.childNodes]) walk(child);
+    }
+  }
+  walk(tpl.content);
+  return tpl.innerHTML;
+}
+
+function renderCards(toolResults) {
+  if (!toolResults || !toolResults.length) return '';
+  let html = '<div class="cards">';
+  for (const tr of toolResults) {
+    const list = Array.isArray(tr.data) ? tr.data : [tr.data];
+    for (const item of list) {
+      if (!item || typeof item !== 'object' || item.error) continue;
+      const img = item.cover || item.photo;
+      const title = item.title || item.name || item.airline || item.train_no || tr.tool;
+      const desc = [
+        item.author && '@' + item.author,
+        item.summary,
+        item.address,
+        item.depart && (item.depart + ' → ' + (item.arrive || '')),
+        item.price !== undefined && ('¥' + item.price),
+        item.second_class !== undefined && ('二等座 ¥' + item.second_class),
+        item.rating !== undefined && ('★ ' + item.rating),
+      ].filter(Boolean).join(' · ');
+      const url = item.url || item.map_url;
+      html += `<div class="card">${img ? `<img src="${img}" alt="">` : ''}
+        <div class="body">
+          <div class="t">${escapeHtml(String(title))}</div>
+          <div class="d">${escapeHtml(desc)}</div>
+          ${url ? `<a class="a" href="${url}" target="_blank">查看 →</a>` : ''}
+        </div>
+      </div>`;
+    }
+  }
+  html += '</div>';
+  return html;
+}
+
+function showTyping(label) {
+  let div = document.getElementById('typing');
+  if (!div) {
+    div = document.createElement('div');
+    div.className = 'msg bot';
+    div.id = 'typing';
+    chat.appendChild(div);
+  }
+  div.innerHTML = `<div class="typing"><span></span><span></span><span></span></div>
+                   <div style="font-size:11px;color:#888;margin-top:4px" id="typingLabel">${escapeHtml(label || '')}</div>`;
+  chat.scrollTop = chat.scrollHeight;
+}
+function updateTyping(label) {
+  const lab = document.getElementById('typingLabel');
+  if (lab) lab.textContent = label || '';
+}
+function hideTyping() {
+  const t = document.getElementById('typing');
+  if (t) t.remove();
+}
+
+let pendingToolResults = [];
+let busyAgentLabel = null;
+let abortCtrl = null;
+let busy = false;
+let pendingUserBubble = null;
+
+function setBusy(state) {
+  busy = state;
+  document.body.classList.toggle('busy', !!state);
+  if (state) {
+    sendBtn.textContent = '停止';
+    sendBtn.classList.add('stop');
+  } else {
+    sendBtn.textContent = '发送';
+    sendBtn.classList.remove('stop');
+  }
+}
+
+async function send(overrideText, editContext) {
+  if (busy) {
+    if (abortCtrl) abortCtrl.abort();
+    return;
+  }
+  let text;
+  let userBubble = null;
+  let replaceMessageId = null;
+  if (overrideText != null) {
+    text = String(overrideText).trim();
+    if (editContext) {
+      userBubble = editContext.userBubble || null;
+      replaceMessageId = editContext.replaceMessageId || null;
+    }
+  } else {
+    text = input.value.trim();
+  }
+  if (!text) return;
+  if (!userBubble) {
+    userBubble = appendMsg('user', escapeHtml(text), null, {rawText: text});
+  }
+  if (overrideText == null) input.value = '';
+  pendingToolResults = [];
+  pendingUserBubble = userBubble;
+  showTyping('小旅正在思考…');
+  abortCtrl = new AbortController();
+  setBusy(true);
+
+  try {
+    const payload = {message: text, location: currentLocation};
+    if (currentConversationId) payload.conversation_id = currentConversationId;
+    if (replaceMessageId != null) payload.replace_message_id = replaceMessageId;
+    const resp = await fetch('/api/chat', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(payload),
+      signal: abortCtrl.signal,
+    });
+    if (resp.status === 401 && authRequired) {
+      accessToken = '';
+      localStorage.removeItem(LS_TOKEN);
+      await initAuth();
+      throw new Error('登录已失效，请重新登录');
+    }
+    if (!resp.ok || !resp.body) throw new Error('请求失败 ' + resp.status);
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    let currentEvent = '';
+
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, {stream: true});
+      const lines = buf.split('\n');
+      buf = lines.pop() || '';
+      for (const line of lines) {
+        if (line.startsWith('event:')) currentEvent = line.slice(6).trim();
+        else if (line.startsWith('data:')) {
+          const dataStr = line.slice(5).trim();
+          if (!dataStr) continue;
+          let payload = {};
+          try { payload = JSON.parse(dataStr); } catch (e) {}
+          handleEvent(currentEvent, payload);
+        }
+      }
+    }
+  } catch (e) {
+    hideTyping();
+    if (e.name === 'AbortError') {
+      appendSys('已停止本次回复');
+    } else {
+      appendSys('出错了：' + e.message);
+    }
+  } finally {
+    hideTyping();
+    abortCtrl = null;
+    pendingUserBubble = null;
+    setBusy(false);
+    input.focus();
+  }
+}
+
+function handleEvent(event, payload) {
+  if (event === 'agent_end') {
+    if (Array.isArray(payload.tool_results) && payload.tool_results.length) {
+      pendingToolResults = pendingToolResults.concat(payload.tool_results);
+    }
+    if (payload.agent && payload.agent !== 'testing_agent') {
+      updateTyping('小旅正在整理 ' + payload.agent.replace('_agent', '') + ' 的结果…');
+    }
+  } else if (event === 'agent_start') {
+    if (payload.agent && payload.agent !== 'testing_agent') {
+      updateTyping('小旅正在调用 ' + payload.agent.replace('_agent', '') + '…');
+    }
+  } else if (event === 'final') {
+    hideTyping();
+    const ctx = { location: payload.location, location_info: payload.location_info };
+    const pois = Array.isArray(payload.pois) ? payload.pois : [];
+    let html = renderMarkdown(payload.text);
+    html = linkifyPois(html, pois, ctx);
+    const ids = payload.message_ids || {};
+    appendMsg('bot', html, null, {
+      messageId: ids.assistant != null ? ids.assistant : undefined,
+      rawText: payload.text,
+    });
+    if (ids.user != null && pendingUserBubble && !pendingUserBubble.dataset.msgId) {
+      setMsgId(pendingUserBubble, ids.user);
+    }
+    pendingUserBubble = null;
+    pendingToolResults = [];
+    if (payload.conversation_id) {
+      const cid = payload.conversation_id;
+      const switching = cid !== currentConversationId;
+      // 把新 title 同步到缓存（如果有）
+      if (payload.conversation_title) {
+        let conv = conversationsCache.find(c => c.id === cid);
+        if (conv) {
+          conv.title = payload.conversation_title;
+        } else {
+          conv = {
+            id: cid,
+            title: payload.conversation_title,
+            created_at: null,
+            updated_at: new Date().toISOString(),
+            archived: false,
+            message_count: 0,
+          };
+          conversationsCache = [conv].concat(conversationsCache);
+        }
+      }
+      if (switching) setCurrentConversation(cid);
+      else if (payload.conversation_title) {
+        convTitleEl.textContent = payload.conversation_title;
+        renderConvList();
+      }
+      // 后台静默拉一次列表，让消息计数 / 排序刷新
+      loadConversations();
+    }
+    refreshEditableTarget();
+  } else if (event === 'error') {
+    hideTyping();
+    appendSys('⚠ ' + (payload.text || '后端异常'));
+  }
+}
+
+sendBtn.addEventListener('click', send);
+input.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !busy) send();
+});
+
+async function reverseLookup(lng, lat) {
+  try {
+    const r = await fetch(`/api/reverse?lng=${lng}&lat=${lat}`);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) { return null; }
+}
+
+function setLocStatus(prefix, lng, lat, info) {
+  const place = info
+    ? `${info.city || ''}${info.district || ''}${info.township || ''}`.trim()
+    : '';
+  locStatus.innerHTML = `<span class="loc-pill">${prefix}</span>${escapeHtml(place || '位置已获取')}`;
+}
+
+async function detectLocation(silent) {
+  if (!navigator.geolocation) {
+    if (!silent) appendSys('浏览器不支持定位');
+    return;
+  }
+  if (!silent) updateTyping ? null : null;
+  navigator.geolocation.getCurrentPosition(
+    async pos => {
+      const lng = pos.coords.longitude;
+      const lat = pos.coords.latitude;
+      currentLocation = {lng, lat};
+      const info = await reverseLookup(lng, lat);
+      setLocStatus('已定位', lng, lat, info);
+      if (!silent) {
+        const place = `${info?.city || ''}${info?.district || ''}${info?.township || ''}`;
+        appendSys('已定位到：' + (place || '当前位置'));
+      }
+    },
+    err => {
+      if (!silent) appendSys('定位失败：' + (err.message || '已拒绝授权'));
+    },
+    {enableHighAccuracy: true, timeout: 8000, maximumAge: 60000}
+  );
+}
+
+btnLoc.addEventListener('click', () => detectLocation(false));
+window.addEventListener('load', async () => {
+  await initAuth();
+  await loadConversations();
+  await loadHistory(currentConversationId);
+  detectLocation(true);
+});
+
+</script>
+</body>
+</html>

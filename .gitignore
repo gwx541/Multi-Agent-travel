@@ -1,0 +1,10 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+data/
+xhs-data/
+scripts/xhs_qrcode.png
+.idea/
+.vscode/
+*.log
