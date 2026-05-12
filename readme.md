@@ -25,7 +25,7 @@
 | 维度 | 实现 |
 | --- | --- |
 | **多 Agent 编排** | Manager LLM 用 JSON 输出 `next_agent / subtask / final_answer`，路由到 5 个领域 Agent；每个 Agent 内部 ReAct 循环 + 工具调用 |
-| **真实 MCP 接入** | 自研 `MCPClient` 同时支持 **SSE / Streamable HTTP**，集成高德、小红书、12306、飞常准、携程 5 个生态 MCP；任一未配置自动 mock 兜底 |
+| **真实 MCP 接入** | 自研 `MCPClient` 同时支持 **SSE / Streamable HTTP**，集成高德、小红书、12306、飞常准、AIGOHOTEL 酒店 5 个生态 MCP；任一未配置自动 mock 兜底 |
 | **分层记忆系统** | **短期记忆**（进程内按会话缓存，30 分钟自动过期）存储会话便签与完整消息；**长期记忆**（SQLite 持久化）存储跨对话用户偏好；两层统一注入 Manager 和下游 Agent 上下文 |
 | **DeepSeek 兼容兜底** | 处理 DeepSeek 偶发以 DSML 形式输出工具调用的问题（`_parse_dsml_calls`）；manager `json_object` 模式双层包裹兜底（`_extract_decision`） |
 | **流式可中断** | FastAPI + `sse-starlette` 推送 `manager / agent_start / agent_end / final` 事件；前端 `AbortController` 一键打断，后端自动取消 orchestrator |
@@ -60,7 +60,7 @@
 
 - **后端**：Python 3.11、FastAPI、`sse-starlette`、`mcp`（官方 SDK，SSE + Streamable HTTP）、`openai` SDK（兼容 DeepSeek）、Pydantic v2、SQLAlchemy 异步
 - **LLM**：DeepSeek-Chat（function calling，本项目所有 Agent 工具调用基础）
-- **MCP**：高德、小红书（`xpzouying/xiaohongshu-mcp`）、12306（`Joooook/12306-mcp`，魔搭社区托管）、飞常准（魔搭社区托管）、携程（mock + 真实搜索页 URL）
+- **MCP**：高德、小红书（`xpzouying/xiaohongshu-mcp`）、12306（`Joooook/12306-mcp`，魔搭社区托管）、飞常准（魔搭社区托管）、AIGOHOTEL 酒店（`yorklu/AI_Go_Hotel_MCP`，魔搭社区托管）
 - **存储**：SQLite（默认）/ PostgreSQL（生产可切换），异步 SQLAlchemy
 - **前端**：纯 HTML/CSS/JS 单文件 SPA，自研轻量 markdown 渲染器，浏览器 `navigator.geolocation`
 - **部署**：Docker + docker-compose
@@ -188,6 +188,20 @@ docker exec -it xhs-mcp /app/login
 XHS_MCP_URL=http://localhost:18060/mcp
 ```
 
+### AIGOHOTEL 酒店
+
+魔搭社区托管（`yorklu/AI_Go_Hotel_MCP`），支持真实酒店搜索：
+
+1. 前往 <https://mcp.agentichotel.cn/apply> 申请 API Key（`mcp_` 前缀）
+2. 在 [ModelScope · AI_Go_Hotel_MCP](https://www.modelscope.cn/mcp/servers/yorklu/AI_Go_Hotel_MCP) 登录后获取个人 SSE/MCP 端点，形如：
+   `https://mcp.api-inference.modelscope.net/<your-token>/mcp`
+
+```env
+HOTEL_MCP_URL=https://mcp.api-inference.modelscope.net/<your-token>/mcp
+```
+
+留空则自动走内置 mock 兜底。
+
 
 ## 📂 目录结构
 
@@ -206,7 +220,7 @@ travelagent/
 │   │   ├── amap.py
 │   │   ├── xhs.py
 │   │   ├── train12306.py
-│   │   ├── ctrip.py
+│   │   ├── hotel.py
 │   │   └── variflight.py
 │   ├── memory/
 │   │   ├── memory_store.py    # 长期记忆（SQLAlchemy 异步，SQLite/PG）
