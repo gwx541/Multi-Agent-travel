@@ -8,3 +8,6 @@ scripts/xhs_qrcode.png
 .idea/
 .vscode/
 *.log
+node_modules/
+web/dist/
+web/node_modules/

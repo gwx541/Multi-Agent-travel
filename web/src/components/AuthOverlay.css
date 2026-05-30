@@ -1,0 +1,72 @@
+.auth-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.auth-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px;
+  width: 100%;
+  max-width: 320px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+}
+
+.auth-card h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.auth-hint {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: #666;
+}
+
+.auth-card input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.auth-error {
+  color: #dc2626;
+  font-size: 13px;
+  margin: 0 0 10px;
+}
+
+.auth-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.auth-actions button {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  border-radius: 10px;
+  background: #ff5777;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.auth-actions button.secondary {
+  background: #f3f4f6;
+  color: #333;
+}
+
+.auth-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
