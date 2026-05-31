@@ -4,13 +4,12 @@ from __future__ import annotations
 from typing import Any
 
 from backend.agents.base import Agent, Tool
-from backend.memory.memory_store import memory_store
 from backend.memory.short_term import short_term_memory
 
 
 async def _save_pref(user_id: str, preference: str) -> dict[str, Any]:
-    await memory_store.add_preference(user_id, preference)
-    return {"ok": True, "saved": preference}
+    # 无状态记忆模式：不再写库；偏好由编排器从工具结果里收集，经 SSE 回传给客户端本地保存。
+    return {"ok": True, "saved": (preference or "").strip()}
 
 
 async def _save_session_note(conversation_id: str, note: str) -> dict[str, Any]:

@@ -1,0 +1,21 @@
+// 国内镜像加速：把所有模块（含 Capacitor 子工程）的仓库强制改为阿里云镜像，
+// 避免 dl.google.com / Maven Central 在国内网络下连接超时。
+// 用法：gradlew assembleDebug --init-script cn-mirror.init.gradle
+def aliyun = [
+    'https://maven.aliyun.com/repository/google',
+    'https://maven.aliyun.com/repository/public',
+    'https://maven.aliyun.com/repository/gradle-plugin',
+]
+
+allprojects {
+    buildscript {
+        repositories {
+            clear()
+            aliyun.each { u -> maven { url u } }
+        }
+    }
+    repositories {
+        clear()
+        aliyun.each { u -> maven { url u } }
+    }
+}

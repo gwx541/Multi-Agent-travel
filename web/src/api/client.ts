@@ -1,3 +1,5 @@
+import { apiUrl } from '../config';
+
 const LS_TOKEN = 'travelagent_access_token';
 
 export function getToken(): string {
@@ -31,7 +33,7 @@ export async function apiFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const res = await fetch(path, init);
+  const res = await fetch(apiUrl(path), init);
   const data = await res.json().catch(() => ({} as T));
   if (!res.ok) {
     const detail =

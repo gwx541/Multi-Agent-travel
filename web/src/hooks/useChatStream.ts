@@ -26,7 +26,9 @@ export function useChatStream() {
       message: string;
       conversationId?: string | null;
       location?: ChatLocation | null;
-      replaceMessageId?: number | null;
+      preferences?: string[];
+      history?: { role: string; content: string }[];
+      needTitle?: boolean;
       onFinal: (payload: {
         html: string;
         rawText: string;
@@ -51,7 +53,9 @@ export function useChatStream() {
             message: opts.message,
             conversation_id: opts.conversationId,
             location: opts.location,
-            replace_message_id: opts.replaceMessageId,
+            preferences: opts.preferences,
+            history: opts.history,
+            need_title: opts.needTitle,
           },
           {
             onEvent: (type, payload) => {

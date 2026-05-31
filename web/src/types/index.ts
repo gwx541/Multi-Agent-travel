@@ -38,6 +38,7 @@ export interface FinalPayload {
   conversation_id?: string;
   conversation_title?: string;
   message_ids?: { user?: number; assistant?: number };
+  new_preferences?: string[];
 }
 
 export type ChatSSEEventType =

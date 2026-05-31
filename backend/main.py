@@ -75,29 +75,23 @@ async def chat(
     loc = req.location.model_dump() if req.location else None
     conversation_id = req.conversation_id
 
-    if req.replace_message_id is not None:
-        existing = await memory_store.get_message(user_id, req.replace_message_id)
-        if existing is None:
-            raise HTTPException(status_code=404, detail="待编辑的消息不存在或不属于当前用户")
-        if existing.get("role") != "user":
-            raise HTTPException(status_code=400, detail="只允许重新生成『用户消息』")
-        await memory_store.update_message(user_id, req.replace_message_id, req.message)
-        await memory_store.truncate_from(
-            user_id, req.replace_message_id, inclusive=False
-        )
-
-    if conversation_id is not None:
-        conv = await memory_store.get_conversation(user_id, conversation_id)
-        if conv is None:
-            raise HTTPException(status_code=404, detail="会话不存在或不属于当前用户")
+    # 无状态记忆模式：记忆全部在客户端（手机本地）。
+    # 偏好与近期会话上下文随请求带上，后端不读写数据库，编辑/重生成也由客户端在本地处理。
+    history = (
+        [{"role": h.role, "content": h.content} for h in req.history]
+        if req.history
+        else None
+    )
 
     async def event_gen():
         async for ev in run_orchestration(
             user_id,
             req.message,
             loc,
-            skip_user_persist=req.replace_message_id is not None,
             conversation_id=conversation_id,
+            preferences=req.preferences,
+            history=history,
+            need_title=req.need_title,
         ):
             yield ev.to_sse()
 

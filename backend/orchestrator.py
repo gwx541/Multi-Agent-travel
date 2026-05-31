@@ -23,7 +23,6 @@ from backend.agents.planning import build_planning_agent
 from backend.agents.search import build_search_agent
 from backend.agents.testing import build_testing_agent
 from backend.config import settings
-from backend.memory.memory_store import memory_store
 from backend.memory.short_term import short_term_memory
 from backend.mcp import amap
 from backend.utils.locale import detect_overseas
@@ -216,29 +215,6 @@ def _generate_conversation_title(user_input: str) -> str | None:
     return raw[:_TITLE_MAX_CHARS].rstrip()
 
 
-async def _maybe_auto_title(
-    client: AsyncOpenAI,
-    user_id: str,
-    conversation_id: str | None,
-    user_input: str,
-    assistant_text: str,
-) -> str | None:
-    """如果会话还没标题，让 LLM 起一个 4–12 字的中文短标题，写库并返回；否则返回 None。"""
-    if not conversation_id:
-        return None
-    try:
-        if not await memory_store.needs_auto_title(user_id, conversation_id):
-            return None
-        title = _generate_conversation_title(user_input)
-        if not title:
-            return None
-        await memory_store.update_conversation(user_id, conversation_id, title=title)
-        return title
-    except Exception as e:
-        print(f"[title] auto-title skipped: {type(e).__name__}: {e}")
-        return None
-
-
 _HOTEL_HEADING_RE = re.compile(r"(?:^|\n)#{1,6}\s*🏨[^\n]*\n")
 _HOTEL_ITEM_RE = re.compile(r"^\s*-\s*\[[^\]]+\]\(https?://", re.MULTILINE)
 _ANY_HEADING_RE = re.compile(r"\n#{1,6}\s")
@@ -344,12 +320,15 @@ async def run_orchestration(
     location: dict[str, float] | None = None,
     skip_user_persist: bool = False,
     conversation_id: str | None = None,
+    preferences: list[str] | None = None,
+    history: list[dict[str, str]] | None = None,
+    need_title: bool = False,
 ) -> AsyncIterator[Event]:
-    """主入口：以事件流形式驱动一轮多 agent 协作。
+    """主入口：以事件流形式驱动一轮多 agent 协作（无状态记忆模式）。
 
-    ``skip_user_persist=True`` 用于"编辑历史用户消息并重新生成"场景：
-    用户消息已由路由层就地替换到历史中，本函数不再重复 append。
-    ``conversation_id`` 指定属于哪个会话；省略时取该用户最新会话（或自动新建）。
+    记忆保存在客户端：``preferences``（长期偏好）与 ``history``（近期会话上下文）
+    由调用方传入，本函数不读写数据库。识别到的新偏好通过 ``final`` 事件的
+    ``new_preferences`` 回传；``need_title`` 为真时回传 ``conversation_title``。
     """
     with span(
         "orchestrator.run",
@@ -367,8 +346,37 @@ async def run_orchestration(
             location,
             skip_user_persist=skip_user_persist,
             conversation_id=conversation_id,
+            preferences=preferences,
+            history=history,
+            need_title=need_title,
         ):
             yield ev
+
+
+def _pref_summary_from_list(preferences: list[str] | None) -> str:
+    """从客户端传入的偏好列表生成长期记忆摘要。"""
+    prefs = [p.strip() for p in (preferences or []) if isinstance(p, str) and p.strip()]
+    if not prefs:
+        return "（暂无已记录的长期偏好）"
+    return "【长期偏好】" + "；".join(prefs)
+
+
+def _harvest_new_prefs(
+    tool_results: list[dict[str, Any]] | None,
+    sink: list[str],
+    existing: set[str],
+) -> None:
+    """从 save_user_preference 的工具结果里收集本轮新保存的偏好（去重）。"""
+    for tr in tool_results or []:
+        if not isinstance(tr, dict) or tr.get("tool") != "save_user_preference":
+            continue
+        data = tr.get("data")
+        saved = data.get("saved") if isinstance(data, dict) else None
+        if isinstance(saved, str):
+            s = saved.strip()
+            if s and s not in existing:
+                existing.add(s)
+                sink.append(s)
 
 
 async def _run_orchestration_inner(
@@ -377,34 +385,26 @@ async def _run_orchestration_inner(
     location: dict[str, float] | None = None,
     skip_user_persist: bool = False,
     conversation_id: str | None = None,
+    preferences: list[str] | None = None,
+    history: list[dict[str, str]] | None = None,
+    need_title: bool = False,
 ) -> AsyncIterator[Event]:
     client = get_openai()
 
-    user_blob = await memory_store.get_user(user_id, conversation_id)
-    # 取到的会话 id（若入参为 None，这里就是最新会话；用户没有会话时返回 None）
-    conversation_id = user_blob.get("conversation_id") or conversation_id
-
     agents = _build_agents(user_id, conversation_id)
 
-    # 短期记忆：优先用进程内缓存（当前 runtime 会话，最多 20 条）
-    # 回退：DB 里最近 8 条（跨重启恢复上下文）
-    st_messages = (
-        short_term_memory.get_messages(conversation_id)[-20:]
-        if conversation_id
-        else []
-    )
-    db_history = user_blob.get("history", [])
-    history = st_messages if st_messages else db_history[-8:]
+    # 无状态记忆：上下文与偏好均由客户端（手机本地）传入，后端不读写数据库。
+    history = [
+        {"role": str(h.get("role")), "content": str(h.get("content"))}
+        for h in (history or [])
+        if isinstance(h, dict) and h.get("role") and h.get("content")
+    ][-8:]
 
-    pref_summary = await memory_store.summary_for_prompt(user_id, conversation_id)
-    user_msg_id: int | None = None
-    if not skip_user_persist:
-        user_msg_id = await memory_store.append_history(
-            user_id, "user", user_input, conversation_id=conversation_id
-        )
-        # 同步到短期缓存
-        if conversation_id:
-            short_term_memory.append_message(conversation_id, "user", user_input)
+    pref_summary = _pref_summary_from_list(preferences)
+    existing_prefs: set[str] = {
+        p.strip() for p in (preferences or []) if isinstance(p, str) and p.strip()
+    }
+    new_preferences: list[str] = []
 
     enriched_input = user_input
     location_info: dict[str, Any] | None = None
@@ -489,30 +489,14 @@ async def _run_orchestration_inner(
         except Exception as e:
             text = f"（闲聊通道异常：{type(e).__name__}: {e}）"
         yield Event("agent_end", {"agent": agent.name, "text": text, "tool_results": []})
-        assistant_msg_id = await memory_store.append_history(
-            user_id, "assistant", text, conversation_id=conversation_id
-        )
-        if conversation_id is None:
-            # 若入参为 None，append_history 内部会自动建一个 conversation；取回最新
-            conversation_id = (
-                await memory_store.get_user(user_id)
-            ).get("conversation_id")
-        # 同步 assistant 回复到短期缓存
-        if conversation_id:
-            short_term_memory.append_message(conversation_id, "assistant", text)
-        conv_title = await _maybe_auto_title(
-            client, user_id, conversation_id, user_input, text
-        )
+        conv_title = _generate_conversation_title(user_input) if need_title else None
         yield Event(
             "final",
             {
                 "text": text,
                 "conversation_id": conversation_id,
                 "conversation_title": conv_title,
-                "message_ids": {
-                    "user": user_msg_id,
-                    "assistant": assistant_msg_id,
-                },
+                "new_preferences": new_preferences,
             },
         )
         return
@@ -529,6 +513,11 @@ async def _run_orchestration_inner(
                 yield ev
                 if ev.type == "agent_end":
                     _harvest_pois(ev.payload.get("tool_results") or [], collected_pois)
+                    _harvest_new_prefs(
+                        ev.payload.get("tool_results"),
+                        new_preferences,
+                        existing_prefs,
+                    )
     except Exception as e:  # 把后端异常显式回传，避免前端只看到 SSE 中断
         msg = f"后端异常：{type(e).__name__}: {e}"
         yield Event("error", {"text": msg})
@@ -546,19 +535,7 @@ async def _run_orchestration_inner(
 
     final_answer = _strip_orphan_hotel_section(final_answer)
 
-    assistant_msg_id = await memory_store.append_history(
-        user_id, "assistant", final_answer, conversation_id=conversation_id
-    )
-    if conversation_id is None:
-        conversation_id = (
-            await memory_store.get_user(user_id)
-        ).get("conversation_id")
-    # 同步 assistant 回复到短期缓存
-    if conversation_id:
-        short_term_memory.append_message(conversation_id, "assistant", final_answer)
-    conv_title = await _maybe_auto_title(
-        client, user_id, conversation_id, user_input, final_answer
-    )
+    conv_title = _generate_conversation_title(user_input) if need_title else None
     yield Event(
         "final",
         {
@@ -568,10 +545,7 @@ async def _run_orchestration_inner(
             "location_info": location_info,
             "conversation_id": conversation_id,
             "conversation_title": conv_title,
-            "message_ids": {
-                "user": user_msg_id,
-                "assistant": assistant_msg_id,
-            },
+            "new_preferences": new_preferences,
         },
     )
 

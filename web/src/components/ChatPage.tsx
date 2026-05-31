@@ -6,7 +6,16 @@ import {
   listMessages,
   patchMessage,
   updateConversation,
-} from '../api/conversations';
+  appendMessage,
+  truncateFrom,
+  getPreferences,
+  addPreferences,
+  recentHistory,
+  isPersistentStorageGranted,
+  requestPersistentStorage,
+  migrateToExternalIfNeeded,
+  MEMORY_FILE_HINT,
+} from '../lib/localMemory';
 import { AuthOverlay } from './AuthOverlay';
 import { ConversationDrawer } from './ConversationDrawer';
 import { MarkdownContent } from './MarkdownContent';
@@ -14,6 +23,9 @@ import { useAuth } from '../hooks/useAuth';
 import { useChatStream } from '../hooks/useChatStream';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { escapeHtml, renderMarkdown } from '../lib/markdown';
+import { installLinkInterceptor } from '../lib/openExternal';
+import { isNative } from '../lib/native';
+import { getApiBase, setApiBase } from '../config';
 import {
   clearStoredConversationId,
   getStoredConversationId,
@@ -30,8 +42,7 @@ interface Props {
 }
 
 export function ChatPage({ auth }: Props) {
-  const { user, showOverlay, login, register, logout, handleSessionExpired } =
-    auth;
+  const { user, showOverlay, login, register, logout } = auth;
   const { location, status: locStatus, detect, detectIfGranted } = useGeolocation();
   const { busy, typing, send, stop } = useChatStream();
 
@@ -47,9 +58,10 @@ export function ChatPage({ auth }: Props) {
   const [input, setInput] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState('');
+  const [preferences, setPreferences] = useState<string[]>([]);
+  const [storageReady, setStorageReady] = useState(true);
 
   const chatRef = useRef<HTMLDivElement>(null);
-  const pendingUserIdx = useRef<number | null>(null);
 
   const convTitle =
     conversations.find((c) => c.id === conversationId)?.title ||
@@ -63,6 +75,46 @@ export function ChatPage({ auth }: Props) {
   useEffect(() => {
     scrollToBottom();
   }, [messages, systemNotes, typing, scrollToBottom]);
+
+  useEffect(() => {
+    const el = chatRef.current;
+    if (!el) return;
+    return installLinkInterceptor(el);
+  }, []);
+
+  const handleServerSetting = useCallback(() => {
+    const current = getApiBase();
+    const next = window.prompt(
+      '设置后端服务器地址（安卓 App 需填写电脑/服务器的可访问地址，例如 http://192.168.1.10:8000）。留空则使用相对路径。',
+      current,
+    );
+    if (next === null) return;
+    setApiBase(next);
+    window.location.reload();
+  }, []);
+
+  const handleAuthorizeStorage = useCallback(async () => {
+    await requestPersistentStorage();
+    const granted = await isPersistentStorageGranted();
+    setStorageReady(granted);
+    if (granted) {
+      await migrateToExternalIfNeeded();
+      appendSystem(`已开启所有文件访问，记忆保存在 ${MEMORY_FILE_HINT}。`);
+    } else {
+      appendSystem(
+        '请在打开的系统设置页里允许「所有文件访问」，返回后再点一次「存储授权」。',
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleViewMemory = useCallback(() => {
+    window.alert(
+      preferences.length
+        ? `已记住的长期偏好：\n- ${preferences.join('\n- ')}`
+        : '暂无长期偏好。聊天中告诉我你的偏好（如「不吃辣」），我会记住并存到本地。',
+    );
+  }, [preferences]);
 
   const loadConversations = useCallback(async () => {
     try {
@@ -109,13 +161,26 @@ export function ChatPage({ auth }: Props) {
   }, []);
 
   useEffect(() => {
-    if (auth.loading) return;
-    if (showOverlay) return;
     void loadConversations();
     void loadHistory(conversationId);
     detectIfGranted();
+    void (async () => {
+      setPreferences(await getPreferences());
+      if (isNative()) {
+        const granted = await isPersistentStorageGranted();
+        setStorageReady(granted);
+        if (granted) {
+          await migrateToExternalIfNeeded();
+        } else {
+          appendSystem(
+            `记忆暂存于 App 内部；点右上角「存储授权」开启「所有文件访问」后，` +
+              `记忆将保存到 ${MEMORY_FILE_HINT}，卸载不丢、换机可拷贝。`,
+          );
+        }
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auth.loading, showOverlay]);
+  }, []);
 
   const appendSystem = useCallback((text: string) => {
     setSystemNotes((prev) => [...prev, text]);
@@ -128,86 +193,68 @@ export function ChatPage({ auth }: Props) {
 
       if (!textOverride) setInput('');
 
-      if (replaceMessageId == null) {
+      let cid = conversationId;
+
+      // 编辑并重新生成：先在本地截断目标消息及其之后的所有消息
+      if (replaceMessageId != null) {
+        const truncCid = await truncateFrom(replaceMessageId);
+        if (truncCid) cid = truncCid;
         setMessages((prev) => {
-          pendingUserIdx.current = prev.length;
-          return [
-            ...prev,
-            { role: 'user', content: text, html: escapeHtml(text) },
-          ];
+          const idx = prev.findIndex((m) => m.id === replaceMessageId);
+          return idx >= 0 ? prev.slice(0, idx) : prev;
         });
       }
 
+      // 发给模型的上下文（在写入本条用户消息之前取，避免重复）
+      const history = await recentHistory(cid, 8);
+      const prefs = await getPreferences();
+      const existingTitle = cid
+        ? conversations.find((c) => c.id === cid)?.title || ''
+        : '';
+      const needTitle = !existingTitle.trim();
+
+      // 持久化用户消息到本地
+      const appendedUser = await appendMessage(cid, 'user', text);
+      cid = appendedUser.conversationId;
+      setConversationId(cid);
+      setStoredConversationId(cid);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: appendedUser.id,
+          role: 'user',
+          content: text,
+          html: escapeHtml(text),
+        },
+      ]);
+
       await send({
         message: text,
-        conversationId,
+        conversationId: cid,
         location,
-        replaceMessageId,
-        onFinal: ({ html, rawText, final }) => {
-          setMessages((prev) => {
-            const next = [...prev];
-            const ids = final.message_ids;
-            if (ids?.user != null && pendingUserIdx.current != null) {
-              const idx = pendingUserIdx.current;
-              if (next[idx]) next[idx] = { ...next[idx], id: ids.user };
-            }
-            next.push({
-              id: ids?.assistant,
-              role: 'assistant',
-              content: rawText,
-              html,
-            });
-            return next;
-          });
-          pendingUserIdx.current = null;
-
-          if (final.conversation_id) {
-            const cid = final.conversation_id;
-            setConversationId(cid);
-            setStoredConversationId(cid);
-            if (final.conversation_title) {
-              setConversations((prev) => {
-                const found = prev.find((c) => c.id === cid);
-                if (found) {
-                  return prev.map((c) =>
-                    c.id === cid
-                      ? { ...c, title: final.conversation_title! }
-                      : c,
-                  );
-                }
-                return [
-                  {
-                    id: cid,
-                    title: final.conversation_title!,
-                    created_at: null,
-                    updated_at: new Date().toISOString(),
-                    archived: false,
-                    message_count: 0,
-                  },
-                  ...prev,
-                ];
-              });
-            }
-            void loadConversations();
+        preferences: prefs,
+        history,
+        needTitle,
+        onFinal: async ({ html, rawText, final }) => {
+          const appendedAsst = await appendMessage(cid, 'assistant', rawText);
+          setMessages((prev) => [
+            ...prev,
+            { id: appendedAsst.id, role: 'assistant', content: rawText, html },
+          ]);
+          if (final.new_preferences?.length) {
+            await addPreferences(final.new_preferences);
+            setPreferences(await getPreferences());
           }
+          if (needTitle && final.conversation_title && cid) {
+            await updateConversation(cid, { title: final.conversation_title });
+          }
+          await loadConversations();
         },
-        onError: (msg) => {
-          if (msg.includes('登录已失效')) handleSessionExpired();
-          appendSystem(`出错了：${msg}`);
-        },
+        onError: (msg) => appendSystem(`出错了：${msg}`),
         onAborted: () => appendSystem('已停止本次回复'),
       });
     },
-    [
-      input,
-      conversationId,
-      location,
-      messages.length,
-      send,
-      appendSystem,
-      handleSessionExpired,
-      loadConversations,
-    ],
+    [input, conversationId, location, conversations, send, appendSystem, loadConversations],
   );
 
   const handleCreateConversation = async () => {
@@ -306,18 +353,6 @@ export function ChatPage({ auth }: Props) {
     if (!content) return;
     const id = editingId;
     setEditingId(null);
-    setMessages((prev) => {
-      const idx = prev.findIndex((m) => m.id === id);
-      if (idx < 0) return prev;
-      pendingUserIdx.current = idx;
-      const next = prev.slice(0, idx + 1);
-      next[idx] = {
-        ...next[idx],
-        content,
-        html: escapeHtml(content),
-      };
-      return next;
-    });
     await handleSend(content, id);
   };
 
@@ -380,6 +415,27 @@ export function ChatPage({ auth }: Props) {
             <button type="button" onClick={() => void detect(false)} title="获取 GPS 位置">
               定位
             </button>
+            <button type="button" onClick={handleViewMemory} title="查看长期记忆">
+              记忆
+            </button>
+            {isNative() && !storageReady && (
+              <button
+                type="button"
+                onClick={() => void handleAuthorizeStorage()}
+                title="开启『所有文件访问』以持久保存记忆（卸载不丢/可换机）"
+              >
+                存储授权
+              </button>
+            )}
+            {isNative() && (
+              <button
+                type="button"
+                onClick={handleServerSetting}
+                title="设置后端服务器地址"
+              >
+                服务器
+              </button>
+            )}
             {user && (
               <button type="button" onClick={logout}>
                 退出

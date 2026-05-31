@@ -1,86 +1,24 @@
-import { useCallback, useEffect, useState } from 'react';
-import {
-  fetchConfig,
-  fetchMe,
-  login as apiLogin,
-  logout as apiLogout,
-  register as apiRegister,
-} from '../api/auth';
-import { setToken } from '../api/client';
+import { useCallback } from 'react';
 import type { User } from '../types';
 
+/**
+ * 本地单用户模式：记忆全部保存在手机本地，不再需要服务端账号/登录。
+ * 保留与原来一致的返回结构，便于上层组件无感切换。
+ */
 export function useAuth() {
-  const [authRequired, setAuthRequired] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [showOverlay, setShowOverlay] = useState(false);
-
-  const init = useCallback(async () => {
-    setLoading(true);
-    try {
-      const cfg = await fetchConfig();
-      setAuthRequired(cfg.auth_required);
-      if (!cfg.auth_required) {
-        setUser(null);
-        setShowOverlay(false);
-        return;
-      }
-      setShowOverlay(true);
-      const me = await fetchMe();
-      if (me) {
-        setUser(me);
-        setShowOverlay(false);
-      } else {
-        setToken('');
-        setUser(null);
-      }
-    } catch {
-      setAuthRequired(false);
-      setShowOverlay(false);
-    } finally {
-      setLoading(false);
-    }
+  const noop = useCallback(async () => {
+    throw new Error('本地模式无需登录');
   }, []);
-
-  useEffect(() => {
-    void init();
-  }, [init]);
-
-  const login = useCallback(async (email: string, password: string) => {
-    const u = await apiLogin(email, password);
-    setUser(u);
-    setShowOverlay(false);
-    return u;
-  }, []);
-
-  const register = useCallback(async (email: string, password: string) => {
-    const u = await apiRegister(email, password);
-    setUser(u);
-    setShowOverlay(false);
-    return u;
-  }, []);
-
-  const logout = useCallback(() => {
-    apiLogout();
-    setUser(null);
-    if (authRequired) setShowOverlay(true);
-  }, [authRequired]);
-
-  const handleSessionExpired = useCallback(() => {
-    setToken('');
-    setUser(null);
-    if (authRequired) setShowOverlay(true);
-  }, [authRequired]);
 
   return {
-    authRequired,
-    user,
-    loading,
-    showOverlay,
-    login,
-    register,
-    logout,
-    handleSessionExpired,
-    refresh: init,
+    authRequired: false,
+    user: null as User | null,
+    loading: false,
+    showOverlay: false,
+    login: noop as (email: string, password: string) => Promise<User>,
+    register: noop as (email: string, password: string) => Promise<User>,
+    logout: () => {},
+    handleSessionExpired: () => {},
+    refresh: async () => {},
   };
 }

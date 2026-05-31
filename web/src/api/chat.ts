@@ -1,4 +1,5 @@
 import { authHeaders, getToken } from './client';
+import { apiUrl } from '../config';
 import type { ChatLocation, ChatSSEEventType, FinalPayload } from '../types';
 
 export interface ChatRequest {
@@ -6,6 +7,9 @@ export interface ChatRequest {
   conversation_id?: string | null;
   location?: ChatLocation | null;
   replace_message_id?: number | null;
+  preferences?: string[];
+  history?: { role: string; content: string }[];
+  need_title?: boolean;
 }
 
 export interface SSEHandler {
@@ -17,14 +21,16 @@ export async function streamChat(
   handler: SSEHandler,
   signal?: AbortSignal,
 ): Promise<void> {
-  const res = await fetch('/api/chat', {
+  const res = await fetch(apiUrl('/api/chat'), {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({
       message: req.message,
       conversation_id: req.conversation_id ?? undefined,
       location: req.location ?? undefined,
-      replace_message_id: req.replace_message_id ?? undefined,
+      preferences: req.preferences ?? undefined,
+      history: req.history ?? undefined,
+      need_title: req.need_title ?? undefined,
     }),
     signal,
   });
