@@ -24,17 +24,17 @@
 
 | 维度 | 实现 |
 | --- | --- |
-| **多 Agent 编排** | Manager LLM 用 JSON 输出 `next_agent / subtask / final_answer`，路由到 5 个领域 Agent；每个 Agent 内部 ReAct 循环 + 工具调用 |
-| **真实 MCP 接入** | 自研 `MCPClient` 同时支持 **SSE / Streamable HTTP**，集成高德、小红书、12306、飞常准、AIGOHOTEL 酒店 5 个生态 MCP；任一未配置自动 mock 兜底 |
-| **分层记忆系统** | **短期记忆**（进程内按会话缓存，30 分钟自动过期）存储会话便签与完整消息；**长期记忆**（SQLite 持久化）存储跨对话用户偏好；两层统一注入 Manager 和下游 Agent 上下文 |
-| **DeepSeek 兼容兜底** | 处理 DeepSeek 偶发以 DSML 形式输出工具调用的问题（`_parse_dsml_calls`）；manager `json_object` 模式双层包裹兜底（`_extract_decision`） |
-| **流式可中断** | FastAPI + `sse-starlette` 推送 `manager / agent_start / agent_end / final` 事件；前端 `AbortController` 一键打断，后端自动取消 orchestrator |
-| **POI 智能链接化** | 后端 `_enrich_poi_locations` 用高德 geocode 给 LLM 输出的店名补坐标；前端 `linkifyPois` 包成可点 marker URL，店名直接跳高德 Web |
+| **多 Agent 编排** | Manager LLM 用结构化 JSON 决策下一步执行的 Agent 与子任务，路由到 5 个领域 Agent；每个 Agent 内部 ReAct 循环 + 工具调用 |
+| **真实 MCP 接入** | 自研统一 MCP 客户端同时支持 **SSE / Streamable HTTP**，集成高德、小红书、12306、飞常准、AIGOHOTEL 酒店 5 个生态 MCP；任一未配置自动 mock 兜底 |
+| **分层记忆系统** | **短期记忆**（进程内按会话缓存，30 分钟自动过期）存储会话便签与完整消息；**长期记忆**（数据库持久化）存储跨对话用户偏好；两层统一注入 Manager 和下游 Agent 上下文 |
+| **DeepSeek 兼容兜底** | 兼容 DeepSeek 偶发以 DSML 形式输出工具调用的情况；Manager 的 JSON 决策即使被双层包裹也能自动解析兜底 |
+| **流式可中断** | 基于服务器推送事件（SSE）分阶段流式返回编排进度；前端可一键打断，后端随即取消正在执行的编排流程 |
+| **POI 智能链接化** | 后端用高德 geocode 给 LLM 输出的店名补坐标，前端自动把店名包成可点的地图 marker 链接，直接跳高德 Web |
 | **域名白名单超链接** | 渲染 markdown 时按域名分配色：小红书 红 / 携程 蓝 / 12306 绿 / 高德 POI 粉，其它域名 URL 一律剥成纯文字防止 LLM 编造 |
 | **本地经验补充** | 导航 Agent 给完官方公交方案后强制再走小红书，挖村巴 / 接驳车 / 直通车这些高德漏掉的本地路线 |
-| **DEMO_MODE 离线演示** | 一个开关把所有 MCP URL 视为空，全部走 mock；零外部 key 即可体验完整流程 |
+| **离线演示模式** | 一个开关把所有 MCP URL 视为空，全部走 mock；零外部 key 即可体验完整流程 |
 
-> 完整改造点（DeepSeek 兼容、anyio cancel scope 修复、POI 坐标补全、SSE 取消、分层记忆等）记录在 commit history 与源码注释中。
+> 完整改造点（DeepSeek 兼容、并发取消修复、POI 坐标补全、流式取消、分层记忆等）记录在提交历史与源码注释中。
 
 
 

@@ -24,17 +24,17 @@ An end-to-end travel assistant built on FastAPI and DeepSeek. A Manager LLM disp
 
 | Area | What it does |
 | --- | --- |
-| **Multi-agent orchestration** | A Manager LLM emits JSON `next_agent / subtask / final_answer` decisions; 5 domain agents run their own ReAct + tool-calling loops |
-| **Real MCP integrations** | Custom `MCPClient` auto-detects **SSE / Streamable HTTP** transports; integrated 5 ecosystem MCP servers (Amap, Xiaohongshu, 12306, Variflight, AIGOHOTEL) with automatic mock fallback |
-| **Two-tier memory system** | **Short-term** (in-process session cache, 30-min TTL): stores full message history + session notes; **Long-term** (SQLite-persisted): stores cross-conversation user preferences; both layers injected into Manager and every downstream agent |
-| **DeepSeek compatibility** | Patches DeepSeek's occasional DSML-style tool calls (`_parse_dsml_calls`); manager `json_object` is double-wrap tolerant via `_extract_decision` |
-| **Streaming + cancellation** | FastAPI + `sse-starlette` pushes `manager / agent_start / agent_end / final` events; the SPA cancels mid-stream via `AbortController`, the backend's orchestrator unwinds cleanly |
-| **POI auto-linkification** | Backend `_enrich_poi_locations` fills missing coordinates via Amap geocode; frontend `linkifyPois` wraps shop names into clickable Amap marker URLs |
+| **Multi-agent orchestration** | A Manager LLM makes structured JSON decisions about the next agent and subtask; 5 domain agents run their own ReAct + tool-calling loops |
+| **Real MCP integrations** | A custom unified MCP client auto-detects **SSE / Streamable HTTP** transports; integrated 5 ecosystem MCP servers (Amap, Xiaohongshu, 12306, Variflight, AIGOHOTEL) with automatic mock fallback |
+| **Two-tier memory system** | **Short-term** (in-process session cache, 30-min TTL): stores full message history + session notes; **Long-term** (database-persisted): stores cross-conversation user preferences; both layers injected into Manager and every downstream agent |
+| **DeepSeek compatibility** | Tolerates DeepSeek's occasional DSML-style tool calls; the Manager's JSON decision is parsed even when double-wrapped |
+| **Streaming + cancellation** | Streams orchestration progress in stages via server-sent events (SSE); the SPA can cancel mid-stream and the backend unwinds the running orchestration cleanly |
+| **POI auto-linkification** | The backend fills missing coordinates via Amap geocode; the frontend wraps shop names into clickable Amap marker links automatically |
 | **Domain-aware link rendering** | Markdown links classified by host: Xiaohongshu red / Ctrip blue / 12306 green / Amap POI pink; non-whitelisted URLs are stripped to prevent LLM hallucinations |
 | **Local-knowledge fallback** | After Amap's official transit answer, the navigation agent is forced to query Xiaohongshu for hidden minibuses / shuttles / shortcuts — the local stuff Amap misses |
-| **DEMO_MODE offline** | Single env flag forces every MCP URL empty → all mocks. Recruiters / teammates can clone & demo with zero external keys |
+| **Offline demo mode** | A single switch forces every MCP URL empty → all mocks. Recruiters / teammates can clone & demo with zero external keys |
 
-> All bug-fix details (DeepSeek DSML, anyio cancel scope crossover, POI geocode retry, SSE cancellation, two-tier memory) are documented in commit messages and source comments.
+> All bug-fix details (DeepSeek DSML, concurrent-cancellation fixes, POI geocode retry, streaming cancellation, two-tier memory) are documented in commit messages and source comments.
 
 ---
 
