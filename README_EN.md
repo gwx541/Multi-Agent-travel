@@ -30,9 +30,8 @@ An end-to-end travel assistant built on FastAPI and DeepSeek. A Manager LLM disp
 | **DeepSeek compatibility** | Tolerates DeepSeek's occasional DSML-style tool calls; the Manager's JSON decision is parsed even when double-wrapped |
 | **Streaming + cancellation** | Streams orchestration progress in stages via server-sent events (SSE); the SPA can cancel mid-stream and the backend unwinds the running orchestration cleanly |
 | **POI auto-linkification** | The backend fills missing coordinates via Amap geocode; the frontend wraps shop names into clickable Amap marker links automatically |
-| **Domain-aware link rendering** | Markdown links classified by host: Xiaohongshu red / Ctrip blue / 12306 green / Amap POI pink; non-whitelisted URLs are stripped to prevent LLM hallucinations |
 | **Local-knowledge fallback** | After Amap's official transit answer, the navigation agent is forced to query Xiaohongshu for hidden minibuses / shuttles / shortcuts — the local stuff Amap misses |
-| **Offline demo mode** | A single switch forces every MCP URL empty → all mocks. Recruiters / teammates can clone & demo with zero external keys |
+
 
 > All bug-fix details (DeepSeek DSML, concurrent-cancellation fixes, POI geocode retry, streaming cancellation, two-tier memory) are documented in commit messages and source comments.
 
@@ -80,7 +79,7 @@ flowchart TB
 | **Storage** | In-process Python dict | SQLite database |
 | **Scope** | Single session (30-min idle TTL; cleared on restart) | Cross-conversation, permanent |
 | **Contents** | Full message cache (last 20 for Manager) + session notes | User preference list |
-| **Write tool** | `save_session_context` (headcount, dates, destination…) | `save_user_preference` (dietary, accommodation…) |
+| **Write tool** |  (headcount, dates, destination…) |  (dietary, accommodation…) |
 | **Injection** | Manager system prompt + every agent's extra_context | Manager system prompt + every agent's extra_context |
 
 When the short-term cache is empty (after restart), the orchestrator automatically falls back to the last 8 messages from the DB so context is never fully lost.
