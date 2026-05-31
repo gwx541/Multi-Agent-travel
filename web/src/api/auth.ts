@@ -1,4 +1,4 @@
-import { apiFetch, authHeaders, setToken } from './client';
+import { apiFetch, setToken } from './client';
 import type { AppConfig, User } from '../types';
 
 interface TokenResponse {

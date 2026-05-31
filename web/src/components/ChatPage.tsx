@@ -32,7 +32,7 @@ interface Props {
 export function ChatPage({ auth }: Props) {
   const { user, showOverlay, login, register, logout, handleSessionExpired } =
     auth;
-  const { location, status: locStatus, detect } = useGeolocation();
+  const { location, status: locStatus, detect, detectIfGranted } = useGeolocation();
   const { busy, typing, send, stop } = useChatStream();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -113,7 +113,7 @@ export function ChatPage({ auth }: Props) {
     if (showOverlay) return;
     void loadConversations();
     void loadHistory(conversationId);
-    void detect(true);
+    detectIfGranted();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth.loading, showOverlay]);
 
@@ -377,7 +377,7 @@ export function ChatPage({ auth }: Props) {
                 {user.email}
               </span>
             )}
-            <button type="button" onClick={() => void detect(false)}>
+            <button type="button" onClick={() => void detect(false)} title="获取 GPS 位置">
               定位
             </button>
             {user && (

@@ -66,4 +66,13 @@ export interface LocationInfo {
   district?: string;
   township?: string;
   street?: string;
+  province?: string;
+  address?: string;
+}
+
+export interface LocateResult extends LocationInfo {
+  lng: number;
+  lat: number;
+  source?: string;
+  approximate?: boolean;
 }

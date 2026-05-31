@@ -13,7 +13,7 @@ import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -230,6 +230,24 @@ async def remove_message(
 async def reverse(lng: float, lat: float):
     try:
         return await amap.reverse_geocode(lng, lat)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+
+
+def _client_ip(request: Request) -> str | None:
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    if request.client:
+        return request.client.host
+    return None
+
+
+@app.get("/api/locate")
+async def locate(request: Request):
+    """IP 近似定位（浏览器 GPS 不可用时的兜底）。"""
+    try:
+        return await amap.locate_by_ip(_client_ip(request))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
 

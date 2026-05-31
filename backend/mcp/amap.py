@@ -56,6 +56,134 @@ async def reverse_geocode(lng: float, lat: float) -> dict[str, Any]:
     }
 
 
+def _is_private_ip(ip: str) -> bool:
+    import ipaddress
+
+    try:
+        addr = ipaddress.ip_address(ip.strip())
+        return addr.is_private or addr.is_loopback or addr.is_link_local
+    except ValueError:
+        return True
+
+
+async def _fetch_public_ip() -> str | None:
+    """本地开发时 client 常为 127.0.0.1，改查服务端出口公网 IP。"""
+    import httpx as _httpx
+
+    endpoints = (
+        "https://api.ipify.org?format=json",
+        "https://ifconfig.me/ip",
+    )
+    async with _httpx.AsyncClient(timeout=6) as hc:
+        for url in endpoints:
+            try:
+                resp = await hc.get(url)
+                if "json" in url:
+                    data = resp.json()
+                    ip = str(data.get("ip", "")).strip()
+                else:
+                    ip = resp.text.strip()
+                if ip and not _is_private_ip(ip):
+                    return ip
+            except Exception:
+                continue
+    return None
+
+
+async def _amap_ip_center(ip: str) -> dict[str, Any] | None:
+    import httpx as _httpx
+
+    url = (
+        f"https://restapi.amap.com/v3/ip"
+        f"?key={settings.amap_api_key}&ip={ip}"
+    )
+    async with _httpx.AsyncClient(timeout=8) as hc:
+        resp = await hc.get(url)
+    data = resp.json()
+    if str(data.get("status")) != "1":
+        return None
+    rect = str(data.get("rectangle") or "")
+    if ";" not in rect:
+        return None
+    p1, p2 = rect.split(";", 1)
+    lng1, lat1 = (float(x) for x in p1.split(",", 1))
+    lng2, lat2 = (float(x) for x in p2.split(",", 1))
+    return {
+        "lng": (lng1 + lng2) / 2,
+        "lat": (lat1 + lat2) / 2,
+        "province": data.get("province") or "",
+        "city": data.get("city") or "",
+    }
+
+
+async def _ipapi_center(ip: str | None) -> dict[str, Any] | None:
+    import httpx as _httpx
+
+    fields = "status,message,lat,lon,city,regionName"
+    if ip:
+        url = f"http://ip-api.com/json/{ip}?fields={fields}"
+    else:
+        url = f"http://ip-api.com/json/?fields={fields}"
+    async with _httpx.AsyncClient(timeout=8) as hc:
+        resp = await hc.get(url)
+    data = resp.json()
+    if data.get("status") != "success":
+        return None
+    lat, lng = data.get("lat"), data.get("lon")
+    if lat is None or lng is None:
+        return None
+    return {
+        "lng": float(lng),
+        "lat": float(lat),
+        "city": data.get("city") or data.get("regionName") or "",
+        "province": data.get("regionName") or "",
+    }
+
+
+async def locate_by_ip(client_ip: str | None = None) -> dict[str, Any]:
+    """IP 定位兜底：浏览器 GPS / Windows 定位服务不可用时使用。
+
+    本地 ``127.0.0.1`` 会先解析公网 IP，再用高德 / ip-api 查近似坐标。
+    """
+    query_ip = client_ip if client_ip and not _is_private_ip(client_ip) else None
+    if not query_ip:
+        query_ip = await _fetch_public_ip()
+
+    center: dict[str, Any] | None = None
+    source = "ip"
+
+    if query_ip and settings.amap_api_key:
+        try:
+            center = await _amap_ip_center(query_ip)
+            source = "ip_amap"
+        except Exception as e:
+            print(f"[amap.locate_by_ip] 高德 IP 失败：{type(e).__name__}: {e}")
+
+    if center is None:
+        try:
+            center = await _ipapi_center(query_ip)
+            source = "ip_api"
+        except Exception as e:
+            print(f"[amap.locate_by_ip] ip-api 失败：{type(e).__name__}: {e}")
+
+    if center is None:
+        raise RuntimeError("无法通过 IP 获取位置，请检查网络或稍后重试")
+
+    lng, lat = center["lng"], center["lat"]
+    info = await reverse_geocode(lng, lat)
+    if not info.get("city") and center.get("city"):
+        info["city"] = center["city"]
+    if not info.get("province") and center.get("province"):
+        info["province"] = center["province"]
+    return {
+        **info,
+        "lng": lng,
+        "lat": lat,
+        "source": source,
+        "approximate": True,
+    }
+
+
 def _normalize_regeo(raw: Any, lng: float, lat: float) -> dict[str, Any]:
     """高德 MCP 返回常常是 [TextContent(text='{...}')]，统一解析成 dict。"""
     import json as _json
