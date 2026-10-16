@@ -55,10 +55,9 @@ def _parse_dsml_calls(content: str) -> list[dict[str, Any]]:
                 else:
                     args[key] = int(val)
             except Exception:
-                if val.lower() in ("true", "false"):
-                    args[key] = val.lower() == "true"
-                else:
-                    args[key] = val
+                # DSML 文本没有类型上下文，无法判断参数期望类型。
+                # 'true'/'false' 可能是字符串参数（如关键词），不能强制转成布尔值。
+                args[key] = val
         out.append({"name": name, "arguments": json.dumps(args, ensure_ascii=False)})
     return out
 
