@@ -51,9 +51,17 @@ def _parse_dsml_calls(content: str) -> list[dict[str, Any]]:
                     pass
             try:
                 if "." in val:
-                    args[key] = float(val)
+                    num: int | float = float(val)
                 else:
-                    args[key] = int(val)
+                    num = int(val)
+                if str(num) == val:
+                    # 转换无损（文本形式不变）时才使用数值，
+                    # 与既有行为兼容（'113.5'→113.5、'5'→5）。
+                    args[key] = num
+                else:
+                    # 会改变文本形式的纯数字字符串（'113.50'、'007'）保留原字符串，
+                    # 避免静默丢失前导零/尾随零等字符串语义。
+                    args[key] = val
             except Exception:
                 # DSML 文本没有类型上下文，无法判断参数期望类型。
                 # 'true'/'false' 可能是字符串参数（如关键词），不能强制转成布尔值。
